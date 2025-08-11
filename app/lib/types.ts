@@ -40,3 +40,10 @@ export interface JobSelectedProduct {
   job_id: string
   product_id: number
 }
+
+export interface JobWithTasks {
+  job: ScrapeJob
+  tasks: LLMTask[]
+}
+
+export type GroupedResults = Record<string, JobWithTasks>

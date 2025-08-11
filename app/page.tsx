@@ -17,6 +17,7 @@ export default function WorkflowPage() {
   const [jobs, setJobs] = useState<ScrapeJob[]>([])
   const [currentJob, setCurrentJob] = useState<ScrapeJob | null>(null)
   const [brandUrl, setBrandUrl] = useState("")
+  const [brandName, setBrandName] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProducts, setSelectedProducts] = useState<number[]>([])
@@ -80,10 +81,15 @@ export default function WorkflowPage() {
 
     setIsSubmitting(true)
     try {
+      const requestBody: { url: string; brand_name?: string } = { url: brandUrl }
+      if (brandName.trim()) {
+        requestBody.brand_name = brandName.trim()
+      }
+
       const response = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: brandUrl }),
+        body: JSON.stringify(requestBody),
       })
 
       const data = await response.json()
@@ -100,13 +106,14 @@ export default function WorkflowPage() {
           status: "SUBMITTED",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          brand_name: new URL(brandUrl).hostname,
+          brand_name: brandName.trim() || new URL(brandUrl).hostname,
         }
 
         setCurrentJob(newJob)
         setJobs((prev) => [newJob, ...prev])
         setCurrentStep(2)
         setBrandUrl("")
+        setBrandName("")
 
         setTimeout(() => scrollToStep(2), 100)
         pollJobStatus(data.job_id)
@@ -181,13 +188,22 @@ export default function WorkflowPage() {
     setCurrentStep(4)
     setTimeout(() => scrollToStep(4), 100)
 
-    // Check if queries already exist
-    await checkExistingQueries(currentJob?.job_id!)
+    // Check if queries already exist for selected products
+    await checkExistingQueries()
   }
 
-  const checkExistingQueries = async (jobId: string) => {
+  const checkExistingQueries = async () => {
     try {
-      const response = await fetch(`/api/queries/${jobId}`)
+      if (!currentJob?.job_id || selectedProducts.length === 0) {
+        setQueries([])
+        setQueriesExist(false)
+        return
+      }
+      const response = await fetch(`/api/queries/${currentJob?.job_id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_ids: selectedProducts }),
+      })
       const data = await response.json()
 
       if (Array.isArray(data) && data.length > 0) {
@@ -222,9 +238,9 @@ export default function WorkflowPage() {
           description: "Query generation started!",
         })
 
-        // Poll for generated queries
+        // Poll for generated queries for selected products
         setTimeout(() => {
-          checkExistingQueries(currentJob?.job_id!)
+          checkExistingQueries()
         }, 3000)
       } else {
         throw new Error("Failed to generate queries")
@@ -349,7 +365,7 @@ export default function WorkflowPage() {
         </div>
 
         {/* Step 1: Job Overview & URL Submission */}
-        <Card className="mb-6" ref={(el) => (stepRefs.current[1] = el)}>
+        <Card className="mb-6" ref={(el) => { stepRefs.current[1] = el }}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
@@ -360,16 +376,36 @@ export default function WorkflowPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter brand URL (e.g., https://store.example.com)"
-                  value={brandUrl}
-                  onChange={(e) => setBrandUrl(e.target.value)}
-                  disabled={currentStep > 1}
-                />
-                <Button onClick={submitBrandUrl} disabled={isSubmitting || currentStep > 1}>
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit"}
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <Input
+                    placeholder="Enter brand URL (e.g., https://store.example.com)"
+                    value={brandUrl}
+                    onChange={(e) => setBrandUrl(e.target.value)}
+                    disabled={currentStep > 1}
+                    className="flex-1 h-10"
+                  />
+                  
+                </div>
+                <div className="relative">
+                  <Input
+                    placeholder="Brand name (optional)"
+                    value={brandName}
+                    onChange={(e) => setBrandName(e.target.value)}
+                    disabled={currentStep > 1}
+                    className="pl-4 pr-4 h-10 border-dashed border-gray-300 bg-gray-50/50 focus:bg-white focus:border-solid focus:border-blue-300"
+                  />
+                  <p className="text-xs text-gray-500 mt-1.5 pl-1">
+                    Leave empty to auto-detect from URL hostname
+                  </p>
+                </div>
+                <Button
+                    onClick={submitBrandUrl} 
+                    disabled={isSubmitting || currentStep > 1}
+                    className="px-6 h-10 min-w-[100px]"
+                  >
+                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Submit"}
+                  </Button>
               </div>
 
               {/* Recent Jobs */}
@@ -395,14 +431,14 @@ export default function WorkflowPage() {
                           className="flex items-center justify-between p-3 bg-white rounded-lg border"
                         >
                           <div className="flex items-center gap-3">
-                            {getStatusIcon(job.status)}
+                            {getStatusIcon(job.status ?? "")}
                             <div>
                               <p className="font-medium text-sm">{job.brand_name || "Unknown Brand"}</p>
                               <p className="text-xs text-gray-500">{new Date(job.created_at).toLocaleString()}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge className={getStatusColor(job.status)}>{job.status}</Badge>
+                            <Badge className={getStatusColor(job.status ?? "")}>{job.status}</Badge>
                             {job.status === "JOB_SUCCESS" && (
                               <Button
                                 size="sm"
@@ -437,7 +473,7 @@ export default function WorkflowPage() {
 
         {/* Step 2: Job Status */}
         {currentStep >= 2 && currentJob && (
-          <Card className="mb-6" ref={(el) => (stepRefs.current[2] = el)}>
+          <Card className="mb-6" ref={(el) => { stepRefs.current[2] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
@@ -448,7 +484,7 @@ export default function WorkflowPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-3">
-                {getStatusIcon(currentJob.status)}
+                {getStatusIcon(currentJob.status ?? "")}
                 <div>
                   <p className="font-medium">{currentJob.brand_name}</p>
                   <p className="text-sm text-gray-600">Status: {currentJob.status}</p>
@@ -465,7 +501,7 @@ export default function WorkflowPage() {
 
         {/* Step 3: Product Selection */}
         {currentStep >= 3 && products.length > 0 && (
-          <Card className="mb-6" ref={(el) => (stepRefs.current[3] = el)}>
+          <Card className="mb-6" ref={(el) => { stepRefs.current[3] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
@@ -494,7 +530,7 @@ export default function WorkflowPage() {
 
         {/* Step 4: Query Selection */}
         {currentStep >= 4 && (
-          <Card className="mb-6" ref={(el) => (stepRefs.current[4] = el)}>
+          <Card className="mb-6" ref={(el) => { stepRefs.current[4] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -504,7 +540,7 @@ export default function WorkflowPage() {
                   Select & Add Queries
                 </div>
                 {queriesExist && (
-                  <Button size="sm" variant="outline" onClick={() => checkExistingQueries(currentJob?.job_id!)}>
+                  <Button size="sm" variant="outline" onClick={() => checkExistingQueries()}>
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                 )}
@@ -513,7 +549,7 @@ export default function WorkflowPage() {
             <CardContent>
               {!queriesExist ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-600 mb-4">No queries found for this job. Generate queries to continue.</p>
+                  <p className="text-gray-600 mb-4">No queries found for the selected products. Generate queries to continue.</p>
                   <Button onClick={generateQueries} disabled={isGeneratingQueries}>
                     {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Generate Queries
@@ -572,7 +608,7 @@ export default function WorkflowPage() {
 
         {/* Step 5: Processing Complete */}
         {currentStep >= 5 && (
-          <Card className="mb-6" ref={(el) => (stepRefs.current[5] = el)}>
+          <Card className="mb-6" ref={(el) => { stepRefs.current[5] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">

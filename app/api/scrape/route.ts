@@ -4,17 +4,20 @@ import { invokeLambda, LAMBDA_ARNS, createApiResponse, createErrorResponse } fro
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { url } = body
+    const { url, brand_name } = body
 
     if (!url) {
       return createErrorResponse("URL is required", 400)
     }
 
+    // Use provided brand_name or extract from URL hostname as fallback
+    const finalBrandName = brand_name || new URL(url).hostname
+
     // Invoke the web scraper lambda
     const result = await invokeLambda(LAMBDA_ARNS.WEBSCRAPPER, {
       body: {
         url,
-        brand_name: new URL(url).hostname,
+        brand_name: finalBrandName,
       },
     })
 
