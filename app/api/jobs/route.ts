@@ -1,0 +1,26 @@
+import { executeQuery, createApiResponse, createErrorResponse } from "../../lib/api"
+
+export async function GET() {
+  try {
+    const records = await executeQuery(`
+      SELECT job_id, source_url, status, created_at, updated_at, brand_name
+      FROM scrapejobs
+      ORDER BY created_at DESC
+      LIMIT 50
+    `)
+
+    const jobs = records.map((record) => ({
+      job_id: record.job_id,
+      source_url: record.source_url,
+      status: record.status,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+      brand_name: record.brand_name,
+    }))
+
+    return createApiResponse(jobs)
+  } catch (error) {
+    console.error("Jobs API error:", error)
+    return createErrorResponse("Failed to fetch jobs")
+  }
+}
