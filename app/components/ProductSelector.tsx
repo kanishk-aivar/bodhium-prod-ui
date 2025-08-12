@@ -91,7 +91,7 @@ export default function ProductSelector({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-muted-foreground">
             {selectedProducts.length} of {products.length} products selected
           </span>
         </div>
@@ -107,7 +107,7 @@ export default function ProductSelector({
         )}
       </div>
 
-      <div className="grid gap-3 max-h-96 overflow-y-auto">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-hidden">
         {products.map((product) => {
           const isSelected = selectedProducts.includes(product.product_id)
           const isExpanded = expandedProducts.has(product.product_id)
@@ -118,59 +118,61 @@ export default function ProductSelector({
           return (
             <Card
               key={product.product_id}
-              className={`transition-colors ${isSelected ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
+              className={`w-full rounded-xl border border-white/60 bg-white/60 backdrop-blur-md shadow-sm transition-colors ${
+                isSelected
+                  ? "ring-2 ring-[hsl(var(--accent))] bg-white/70 dark:bg-[hsl(var(--accent))]/10"
+                  : "hover:bg-white/70 dark:bg-white/5 dark:border-white/10"
+              }`}
             >
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => toggleProduct(product.product_id)}
-                    disabled={disabled}
-                    className="mt-1"
-                  />
-
-                  {productImage && (
+              <CardContent className="p-0">
+                <div className="relative">
+                  {productImage ? (
                     <img
-                      src={productImage || "/placeholder.svg"}
+                      src={productImage}
                       alt={productName}
-                      className="w-16 h-16 object-cover rounded-md"
+                      className="w-full h-40 object-cover rounded-t-xl border-b border-white/60"
                       onError={(e) => {
-                        ;(e.target as HTMLImageElement).src = "/placeholder.svg?height=64&width=64"
+                        ;(e.target as HTMLImageElement).src = "/placeholder.svg?height=160&width=320"
                       }}
                     />
+                  ) : (
+                    <div className="w-full h-40 rounded-t-xl border-b border-white/60 dark:border-white/10 bg-muted dark:bg-white/10" />
                   )}
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-medium text-gray-900 truncate">{productName}</h3>
-                        <p className="text-sm text-gray-500 truncate">{product.brand_name}</p>
-                        {productPrice && (
-                          <Badge variant="secondary" className="mt-1">
-                            ${productPrice}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <Button size="sm" variant="ghost" onClick={() => toggleExpanded(product.product_id)}>
-                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                      </Button>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                        <pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto">
-                          {JSON.stringify(
-                            typeof product.product_data === "string"
-                              ? JSON.parse(product.product_data)
-                              : product.product_data,
-                            null,
-                            2,
-                          )}
-                        </pre>
-                      </div>
-                    )}
+                  <div className="absolute top-2 left-2">
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleProduct(product.product_id)}
+                      disabled={disabled}
+                      className="bg-white/70 backdrop-blur rounded-md"
+                    />
                   </div>
+                </div>
+                <div className="p-4 space-y-2">
+                  <h3 className="font-medium line-clamp-2">{productName}</h3>
+                  <p className="text-sm text-muted-foreground line-clamp-1">{product.brand_name}</p>
+                  <div className="flex items-center justify-between">
+                    {productPrice ? (
+                      <Badge variant="secondary">${productPrice}</Badge>
+                    ) : (
+                      <span />
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => toggleExpanded(product.product_id)}>
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  {isExpanded && (
+                    <div className="mt-2 p-3 rounded-lg bg-secondary/60 dark:bg-white/5 border border-white/60 dark:border-white/10 backdrop-blur">
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap overflow-x-auto">
+                        {JSON.stringify(
+                          typeof product.product_data === "string"
+                            ? JSON.parse(product.product_data)
+                            : product.product_data,
+                          null,
+                          2,
+                        )}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

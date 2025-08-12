@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "./hooks/use-toast"
 import WorkflowNavigation from "./components/WorkflowNavigation"
+import ThemeToggle from "./components/ThemeToggle"
 import ProductSelector from "./components/ProductSelector"
 import QuerySelector from "./components/QuerySelector"
 import type { ScrapeJob, Product, Query } from "./lib/types"
@@ -357,18 +358,28 @@ export default function WorkflowPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Bodhium Workflow</h1>
-          <p className="text-gray-600">Automate brand analysis with AI-powered insights</p>
+    <div className="min-h-screen relative pb-24 bg-gradient-to-br from-[hsl(var(--primary))]/20 via-white to-white dark:from-[hsl(var(--primary))]/25 dark:via-slate-900 dark:to-slate-950">
+      {/* Decorative background accents */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--accent))/25,transparent_60%)] blur-2xl" />
+        <div className="absolute -bottom-24 -left-24 h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--primary))/20,transparent_60%)] blur-3xl" />
+      </div>
+      <div className="relative container mx-auto px-6 md:px-8 py-12 max-w-5xl">
+        <div className="mb-10 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl md:text-5xl font-semibold tracking-tight mb-3 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
+              Bodhium Workflow
+            </h1>
+            <p className="text-muted-foreground text-base">Automate brand analysis with AI-powered insights</p>
+          </div>
+          <ThemeToggle />
         </div>
 
         {/* Step 1: Job Overview & URL Submission */}
-        <Card className="mb-6" ref={(el) => { stepRefs.current[1] = el }}>
+        <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[1] = el }}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
+              <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
                 1
               </span>
               Submit Brand URL
@@ -383,7 +394,7 @@ export default function WorkflowPage() {
                     value={brandUrl}
                     onChange={(e) => setBrandUrl(e.target.value)}
                     disabled={currentStep > 1}
-                    className="flex-1 h-10"
+                    className="flex-1 h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
                   />
                   
                 </div>
@@ -393,16 +404,16 @@ export default function WorkflowPage() {
                     value={brandName}
                     onChange={(e) => setBrandName(e.target.value)}
                     disabled={currentStep > 1}
-                    className="pl-4 pr-4 h-10 border-dashed border-gray-300 bg-gray-50/50 focus:bg-white focus:border-solid focus:border-blue-300"
+                    className="pl-4 pr-4 h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
                   />
-                  <p className="text-xs text-gray-500 mt-1.5 pl-1">
+                  <p className="text-xs text-muted-foreground mt-1.5 pl-1">
                     Leave empty to auto-detect from URL hostname
                   </p>
                 </div>
                 <Button
                     onClick={submitBrandUrl} 
                     disabled={isSubmitting || currentStep > 1}
-                    className="px-6 h-10 min-w-[100px]"
+                    className="px-6 h-11 min-w-[120px] rounded-xl shadow-md"
                   >
                     {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Submit"}
                   </Button>
@@ -411,7 +422,7 @@ export default function WorkflowPage() {
               {/* Recent Jobs */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-gray-900">Recent Workflows</h3>
+                  <h3 className="font-medium">Recent Workflows</h3>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={fetchJobs}>
                       <RefreshCw className="h-4 w-4" />
@@ -423,18 +434,18 @@ export default function WorkflowPage() {
                 </div>
 
                 {isWorkflowsExpanded && (
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {Array.isArray(jobs) && jobs.length > 0 ? (
                       jobs.map((job) => (
                         <div
                           key={job.job_id}
-                          className="flex items-center justify-between p-3 bg-white rounded-lg border"
+                          className="flex items-center justify-between p-4 bg-white/60 dark:bg-white/5 backdrop-blur-md rounded-xl border border-white/60 dark:border-white/10 shadow-sm"
                         >
                           <div className="flex items-center gap-3">
                             {getStatusIcon(job.status ?? "")}
                             <div>
                               <p className="font-medium text-sm">{job.brand_name || "Unknown Brand"}</p>
-                              <p className="text-xs text-gray-500">{new Date(job.created_at).toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(job.created_at).toLocaleString()}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -462,7 +473,7 @@ export default function WorkflowPage() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-gray-500 text-center py-4">No workflows found</p>
+                      <p className="text-muted-foreground text-center py-4">No workflows found</p>
                     )}
                   </div>
                 )}
@@ -473,10 +484,10 @@ export default function WorkflowPage() {
 
         {/* Step 2: Job Status */}
         {currentStep >= 2 && currentJob && (
-          <Card className="mb-6" ref={(el) => { stepRefs.current[2] = el }}>
+          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[2] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
+                <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
                   2
                 </span>
                 Scraping Progress
@@ -487,12 +498,12 @@ export default function WorkflowPage() {
                 {getStatusIcon(currentJob.status ?? "")}
                 <div>
                   <p className="font-medium">{currentJob.brand_name}</p>
-                  <p className="text-sm text-gray-600">Status: {currentJob.status}</p>
+                  <p className="text-sm text-muted-foreground">Status: {currentJob.status}</p>
                 </div>
               </div>
               {currentJob.status === "JOB_RUNNING" && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <p className="text-blue-800">Scraping in progress... This may take several minutes.</p>
+                <div className="mt-4 p-4 rounded-xl bg-secondary/60 border border-white/60 backdrop-blur">
+                  <p className="text-foreground/80">Scraping in progress... This may take several minutes.</p>
                 </div>
               )}
             </CardContent>
@@ -501,10 +512,10 @@ export default function WorkflowPage() {
 
         {/* Step 3: Product Selection */}
         {currentStep >= 3 && products.length > 0 && (
-          <Card className="mb-6" ref={(el) => { stepRefs.current[3] = el }}>
+          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[3] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
+                <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
                   3
                 </span>
                 Select Products
@@ -530,11 +541,11 @@ export default function WorkflowPage() {
 
         {/* Step 4: Query Selection */}
         {currentStep >= 4 && (
-          <Card className="mb-6" ref={(el) => { stepRefs.current[4] = el }}>
+          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[4] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
+                  <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
                     4
                   </span>
                   Select & Add Queries
@@ -549,7 +560,7 @@ export default function WorkflowPage() {
             <CardContent>
               {!queriesExist ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-600 mb-4">No queries found for the selected products. Generate queries to continue.</p>
+                  <p className="text-muted-foreground mb-4">No queries found for the selected products. Generate queries to continue.</p>
                   <Button onClick={generateQueries} disabled={isGeneratingQueries}>
                     {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Generate Queries
@@ -583,6 +594,7 @@ export default function WorkflowPage() {
                           placeholder="Add custom query..."
                           value={customQuery}
                           onChange={(e) => setCustomQuery(e.target.value)}
+                          className="h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
                         />
                         <Button onClick={addCustomQuery} variant="outline">
                           Add Query
@@ -608,10 +620,10 @@ export default function WorkflowPage() {
 
         {/* Step 5: Processing Complete */}
         {currentStep >= 5 && (
-          <Card className="mb-6" ref={(el) => { stepRefs.current[5] = el }}>
+          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[5] = el }}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
+                <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
                   5
                 </span>
                 Processing Complete
@@ -621,7 +633,7 @@ export default function WorkflowPage() {
               <div className="text-center py-8">
                 <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2">Queries are being processed!</h3>
-                <p className="text-gray-600 mb-4">
+                <p className="text-muted-foreground mb-4">
                   Your queries are being processed by our AI models. This may take several minutes to hours depending on
                   the workload.
                 </p>

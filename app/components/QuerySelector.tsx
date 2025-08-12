@@ -42,13 +42,13 @@ export default function QuerySelector({
   const getQueryTypeColor = (type: string) => {
     switch (type) {
       case "product":
-        return "bg-blue-100 text-blue-800"
+        return "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
       case "market":
-        return "bg-green-100 text-green-800"
+        return "bg-[hsl(var(--primary))]/20 text-[hsl(var(--primary))]"
       case "custom":
-        return "bg-purple-100 text-purple-800"
+        return "bg-secondary text-foreground/80"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-muted text-foreground/80"
     }
   }
 
@@ -56,7 +56,7 @@ export default function QuerySelector({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-muted-foreground">
             {selectedQueries.length} of {queries.length} queries selected
           </span>
         </div>
@@ -72,14 +72,18 @@ export default function QuerySelector({
         )}
       </div>
 
-      <div className="grid gap-3 max-h-96 overflow-y-auto">
+      <div className="grid gap-3 max-h-96 overflow-y-auto pr-1">
         {queries.map((query) => {
           const isSelected = selectedQueries.includes(query.query_id)
 
           return (
             <Card
               key={query.query_id}
-              className={`transition-colors ${isSelected ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
+              className={`rounded-xl border border-white/60 bg-white/60 dark:bg-white/5 dark:border-white/10 backdrop-blur-md shadow-sm transition-colors ${
+                isSelected
+                  ? "ring-2 ring-[hsl(var(--accent))] bg-white/70"
+                  : "hover:bg-white/70"
+              }`}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -92,7 +96,7 @@ export default function QuerySelector({
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm text-gray-900 leading-relaxed">{query.query_text}</p>
+                      <p className="text-sm leading-relaxed">{query.query_text}</p>
                       <Badge className={getQueryTypeColor(query.query_type || "unknown")}>
                         {query.query_type || "unknown"}
                       </Badge>
@@ -105,7 +109,7 @@ export default function QuerySelector({
         })}
 
         {queries.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-muted-foreground">
             <p>No queries available. Queries will appear here after generation.</p>
           </div>
         )}
