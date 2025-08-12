@@ -36,6 +36,21 @@ export default function WorkflowPage() {
     fetchJobs()
   }, [])
 
+  // Function to handle product selection changes
+  const handleProductSelectionChange = (newSelection: number[]) => {
+    const selectionChanged = JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedProducts.sort())
+    
+    setSelectedProducts(newSelection)
+    
+    // Clear queries if we're on step 4 and selection actually changed
+    if (currentStep === 4 && selectionChanged && queries.length > 0) {
+      setQueries([])
+      setSelectedQueries([])
+      setQueriesExist(false)
+      setCustomQuery("")
+    }
+  }
+
   const scrollToStep = (step: number) => {
     const element = stepRefs.current[step]
     if (element) {
@@ -109,6 +124,14 @@ export default function WorkflowPage() {
           updated_at: new Date().toISOString(),
           brand_name: brandName.trim() || new URL(brandUrl).hostname,
         }
+
+        // Clear all query-related state for new job
+        setQueries([])
+        setSelectedQueries([])
+        setQueriesExist(false)
+        setCustomQuery("")
+        setSelectedProducts([])
+        setProducts([])
 
         setCurrentJob(newJob)
         setJobs((prev) => [newJob, ...prev])
@@ -185,6 +208,12 @@ export default function WorkflowPage() {
       })
       return
     }
+
+    // Clear query-related state before checking for new queries
+    setQueries([])
+    setSelectedQueries([])
+    setQueriesExist(false)
+    setCustomQuery("")
 
     setCurrentStep(4)
     setTimeout(() => scrollToStep(4), 100)
@@ -434,7 +463,7 @@ export default function WorkflowPage() {
                 </div>
 
                 {isWorkflowsExpanded && (
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                     {Array.isArray(jobs) && jobs.length > 0 ? (
                       jobs.map((job) => (
                         <div
@@ -455,6 +484,13 @@ export default function WorkflowPage() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => {
+                                  // Clear all query-related state when switching jobs
+                                  setQueries([])
+                                  setSelectedQueries([])
+                                  setQueriesExist(false)
+                                  setCustomQuery("")
+                                  setSelectedProducts([])
+                                  
                                   setCurrentJob(job)
                                   fetchProducts(job.job_id)
                                   setCurrentStep(3)
@@ -525,7 +561,7 @@ export default function WorkflowPage() {
               <ProductSelector
                 products={products}
                 selectedProducts={selectedProducts}
-                onSelectionChange={setSelectedProducts}
+                onSelectionChange={handleProductSelectionChange}
                 disabled={currentStep > 3}
               />
               {currentStep === 3 && (

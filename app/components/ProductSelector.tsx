@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { Star, ExternalLink } from "lucide-react"
 import type { Product } from "../lib/types"
 
 interface ProductSelectorProps {
@@ -21,8 +21,6 @@ export default function ProductSelector({
   onSelectionChange,
   disabled = false,
 }: ProductSelectorProps) {
-  const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set())
-
   const toggleProduct = (productId: number) => {
     if (disabled) return
 
@@ -33,15 +31,7 @@ export default function ProductSelector({
     }
   }
 
-  const toggleExpanded = (productId: number) => {
-    const newExpanded = new Set(expandedProducts)
-    if (newExpanded.has(productId)) {
-      newExpanded.delete(productId)
-    } else {
-      newExpanded.add(productId)
-    }
-    setExpandedProducts(newExpanded)
-  }
+  
 
   const selectAll = () => {
     if (disabled) return
@@ -74,6 +64,76 @@ export default function ProductSelector({
       }
     }
     return productData?.price || productData?.cost || null
+  }
+
+  const getProductCurrentPrice = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return (
+      productData?.current_price ||
+      productData?.price ||
+      productData?.cost ||
+      null
+    )
+  }
+
+  const getProductOriginalPrice = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return productData?.original_price || productData?.mrp || null
+  }
+
+  const getProductRating = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    const rating = productData?.rating
+    if (!rating || String(rating).toLowerCase() === "n/a") return null
+    return String(rating)
+  }
+
+  const parseNumericRating = (rating: string | null): number | null => {
+    if (!rating) return null
+    const match = String(rating).match(/\d+(\.\d+)?/)
+    if (!match) return null
+    const value = Math.max(0, Math.min(5, parseFloat(match[0])))
+    return isNaN(value) ? null : value
+  }
+
+  const getProductDescription = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return productData?.description || productData?.desc || null
+  }
+
+  const getProductSourceUrl = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return productData?.source_url || productData?.url || null
   }
 
   const getProductImage = (productData: any) => {
@@ -110,10 +170,14 @@ export default function ProductSelector({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-hidden">
         {products.map((product) => {
           const isSelected = selectedProducts.includes(product.product_id)
-          const isExpanded = expandedProducts.has(product.product_id)
           const productName = getProductName(product.product_data)
-          const productPrice = getProductPrice(product.product_data)
+          const productCurrentPrice = getProductCurrentPrice(product.product_data)
+          const productOriginalPrice = getProductOriginalPrice(product.product_data)
           const productImage = getProductImage(product.product_data)
+          const productRating = getProductRating(product.product_data)
+          const numericRating = parseNumericRating(productRating)
+          const productDescription = getProductDescription(product.product_data)
+          const productSourceUrl = getProductSourceUrl(product.product_data)
 
           return (
             <Card
@@ -146,33 +210,61 @@ export default function ProductSelector({
                       className="bg-white/70 backdrop-blur rounded-md"
                     />
                   </div>
+                  {productRating && (
+                    <div className="absolute top-2 right-2 rounded-md bg-black/50 text-white text-xs px-2 py-0.5 flex items-center gap-1">
+                      <Star className="h-3 w-3 fill-current" />
+                      <span>{productRating}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="p-4 space-y-2">
                   <h3 className="font-medium line-clamp-2">{productName}</h3>
                   <p className="text-sm text-muted-foreground line-clamp-1">{product.brand_name}</p>
+                  <div className="flex items-center gap-2">
+                    {numericRating !== null ? (
+                      <div className="flex items-center gap-1" aria-label={`Rating ${numericRating} out of 5`}>
+                        {Array.from({ length: 5 }).map((_, idx) => {
+                          const filled = idx < Math.round(numericRating)
+                          return (
+                            <Star
+                              key={idx}
+                              className={
+                                "h-3.5 w-3.5 " + (filled ? "text-yellow-500 fill-current" : "text-muted-foreground/40")
+                              }
+                            />
+                          )
+                        })}
+                        <span className="text-xs text-muted-foreground">{numericRating.toFixed(1)}/5</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">rating not available</span>
+                    )}
+                  </div>
+                  {productDescription && (
+                    <p className="text-sm text-muted-foreground line-clamp-2">{productDescription}</p>
+                  )}
+                  {productSourceUrl && (
+                    <a
+                      href={productSourceUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex items-center gap-1 text-xs text-foreground/70 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Source
+                    </a>
+                  )}
                   <div className="flex items-center justify-between">
-                    {productPrice ? (
-                      <Badge variant="secondary">${productPrice}</Badge>
+                    {productCurrentPrice ? (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">{productCurrentPrice}</Badge>
+                        {productOriginalPrice && productOriginalPrice !== productCurrentPrice ? (
+                          <span className="text-xs text-muted-foreground line-through">{productOriginalPrice}</span>
+                        ) : null}
+                      </div>
                     ) : (
                       <span />
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => toggleExpanded(product.product_id)}>
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </Button>
                   </div>
-                  {isExpanded && (
-                    <div className="mt-2 p-3 rounded-lg bg-secondary/60 dark:bg-white/5 border border-white/60 dark:border-white/10 backdrop-blur">
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap overflow-x-auto">
-                        {JSON.stringify(
-                          typeof product.product_data === "string"
-                            ? JSON.parse(product.product_data)
-                            : product.product_data,
-                          null,
-                          2,
-                        )}
-                      </pre>
-                    </div>
-                  )}
                 </div>
               </CardContent>
             </Card>
