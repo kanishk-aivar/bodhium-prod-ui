@@ -1,5 +1,7 @@
 import { executeQuery, createApiResponse, createErrorResponse } from "../../lib/api"
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const records = await executeQuery(`

@@ -1,5 +1,7 @@
 import { executeQuery, createApiResponse, createErrorResponse } from "../../lib/api"
 
+export const dynamic = 'force-dynamic'
+
 type TaskWithJobRow = {
   task_id: string
   job_id: string
