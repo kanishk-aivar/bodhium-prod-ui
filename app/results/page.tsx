@@ -5,10 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Download, Search, CheckCircle, XCircle, Clock, Loader2, ArrowLeft, RefreshCw, ChevronDown, ChevronUp } from "lucide-react"
+import { Download, Search, CheckCircle, XCircle, Clock, Loader2, RefreshCw, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import type { GroupedResults, JobWithTasks, LLMTask } from "../lib/types"
-import ThemeToggle from "../components/ThemeToggle"
 
 export default function ResultsPage() {
   const [groupedResults, setGroupedResults] = useState<GroupedResults>({})
@@ -154,7 +153,7 @@ export default function ResultsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[hsl(var(--primary))]/20 via-white to-white dark:from-[hsl(var(--primary))]/25 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p>Loading results...</p>
@@ -164,26 +163,16 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="min-h-screen relative bg-gradient-to-br from-[hsl(var(--primary))]/20 via-white to-white dark:from-[hsl(var(--primary))]/25 dark:via-slate-900 dark:to-slate-950">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--accent))/25,transparent_60%)] blur-2xl" />
-        <div className="absolute -bottom-24 -left-24 h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--primary))/20,transparent_60%)] blur-3xl" />
-      </div>
-      <div className="relative container mx-auto px-6 md:px-8 py-10 max-w-6xl">
+    <div className="container mx-auto px-6 md:px-8 py-10 max-w-6xl">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">Results Dashboard</h1>
             <p className="text-muted-foreground">View and download your AI processing results, grouped by job</p>
           </div>
           <div className="flex gap-2">
-            <ThemeToggle />
             <Button variant="outline" onClick={fetchResults}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
-            </Button>
-            <Button variant="outline" onClick={() => window.close()}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Close
             </Button>
           </div>
         </div>
@@ -350,7 +339,6 @@ export default function ResultsPage() {
             })
           )}
         </div>
-      </div>
     </div>
   )
 }

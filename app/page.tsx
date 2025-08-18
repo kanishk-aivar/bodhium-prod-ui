@@ -1,62 +1,28 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, Clock, RefreshCw, ChevronDown, ChevronUp, ArrowRight } from "lucide-react"
 import { useToast } from "./hooks/use-toast"
-import WorkflowNavigation from "./components/WorkflowNavigation"
-import ThemeToggle from "./components/ThemeToggle"
-import ProductSelector from "./components/ProductSelector"
-import QuerySelector from "./components/QuerySelector"
-import type { ScrapeJob, Product, Query } from "./lib/types"
+import type { ScrapeJob } from "./lib/types"
 
-export default function WorkflowPage() {
-  const [currentStep, setCurrentStep] = useState(1)
+export default function HomePage() {
   const [jobs, setJobs] = useState<ScrapeJob[]>([])
-  const [currentJob, setCurrentJob] = useState<ScrapeJob | null>(null)
   const [brandUrl, setBrandUrl] = useState("")
   const [brandName, setBrandName] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [products, setProducts] = useState<Product[]>([])
-  const [selectedProducts, setSelectedProducts] = useState<number[]>([])
-  const [queries, setQueries] = useState<Query[]>([])
-  const [selectedQueries, setSelectedQueries] = useState<number[]>([])
-  const [customQuery, setCustomQuery] = useState("")
   const [isWorkflowsExpanded, setIsWorkflowsExpanded] = useState(true)
-  const [isGeneratingQueries, setIsGeneratingQueries] = useState(false)
-  const [queriesExist, setQueriesExist] = useState(false)
 
   const { toast } = useToast()
-  const stepRefs = useRef<{ [key: number]: HTMLDivElement | null }>({})
+  const router = useRouter()
 
   useEffect(() => {
     fetchJobs()
   }, [])
-
-  // Function to handle product selection changes
-  const handleProductSelectionChange = (newSelection: number[]) => {
-    const selectionChanged = JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedProducts.sort())
-    
-    setSelectedProducts(newSelection)
-    
-    // Clear queries if we're on step 4 and selection actually changed
-    if (currentStep === 4 && selectionChanged && queries.length > 0) {
-      setQueries([])
-      setSelectedQueries([])
-      setQueriesExist(false)
-      setCustomQuery("")
-    }
-  }
-
-  const scrollToStep = (step: number) => {
-    const element = stepRefs.current[step]
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" })
-    }
-  }
 
   const fetchJobs = async () => {
     try {
@@ -125,21 +91,11 @@ export default function WorkflowPage() {
           brand_name: brandName.trim() || new URL(brandUrl).hostname,
         }
 
-        // Clear all query-related state for new job
-        setQueries([])
-        setSelectedQueries([])
-        setQueriesExist(false)
-        setCustomQuery("")
-        setSelectedProducts([])
-        setProducts([])
-
-        setCurrentJob(newJob)
         setJobs((prev) => [newJob, ...prev])
-        setCurrentStep(2)
         setBrandUrl("")
         setBrandName("")
 
-        setTimeout(() => scrollToStep(2), 100)
+        // Poll job status and navigate to products when complete
         pollJobStatus(data.job_id)
       } else {
         throw new Error(data.error || "Failed to submit job")
@@ -161,14 +117,15 @@ export default function WorkflowPage() {
         const response = await fetch(`/api/jobs/${jobId}`)
         const job = await response.json()
 
-        setCurrentJob(job)
         setJobs((prev) => prev.map((j) => (j.job_id === jobId ? job : j)))
 
         if (job.status === "JOB_SUCCESS") {
           clearInterval(pollInterval)
-          fetchProducts(jobId)
-          setCurrentStep(3)
-          setTimeout(() => scrollToStep(3), 100)
+          toast({
+            title: "Success",
+            description: "Scraping completed! Redirecting to products page...",
+          })
+          setTimeout(() => router.push("/products"), 1500)
         } else if (job.status === "JOB_FAILED") {
           clearInterval(pollInterval)
           toast({
@@ -185,161 +142,7 @@ export default function WorkflowPage() {
     setTimeout(() => clearInterval(pollInterval), 600000)
   }
 
-  const fetchProducts = async (jobId: string) => {
-    try {
-      const response = await fetch(`/api/products/${jobId}`)
-      const data = await response.json()
-      setProducts(data)
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to fetch products",
-        variant: "destructive",
-      })
-    }
-  }
 
-  const submitProductSelection = async () => {
-    if (selectedProducts.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please select at least one product",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Clear query-related state before checking for new queries
-    setQueries([])
-    setSelectedQueries([])
-    setQueriesExist(false)
-    setCustomQuery("")
-
-    setCurrentStep(4)
-    setTimeout(() => scrollToStep(4), 100)
-
-    // Check if queries already exist for selected products
-    await checkExistingQueries()
-  }
-
-  const checkExistingQueries = async () => {
-    try {
-      if (!currentJob?.job_id || selectedProducts.length === 0) {
-        setQueries([])
-        setQueriesExist(false)
-        return
-      }
-      const response = await fetch(`/api/queries/${currentJob?.job_id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product_ids: selectedProducts }),
-      })
-      const data = await response.json()
-
-      if (Array.isArray(data) && data.length > 0) {
-        setQueries(data)
-        setQueriesExist(true)
-      } else {
-        setQueries([])
-        setQueriesExist(false)
-      }
-    } catch (error) {
-      console.error("Error checking queries:", error)
-      setQueries([])
-      setQueriesExist(false)
-    }
-  }
-
-  const generateQueries = async () => {
-    setIsGeneratingQueries(true)
-    try {
-      const response = await fetch("/api/generate-queries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_id: currentJob?.job_id,
-          product_ids: selectedProducts,
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Query generation started!",
-        })
-
-        // Poll for generated queries for selected products
-        setTimeout(() => {
-          checkExistingQueries()
-        }, 3000)
-      } else {
-        throw new Error("Failed to generate queries")
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate queries",
-        variant: "destructive",
-      })
-    } finally {
-      setIsGeneratingQueries(false)
-    }
-  }
-
-  const addCustomQuery = () => {
-    if (!customQuery.trim()) return
-
-    const newQuery: Query = {
-      query_id: Date.now(),
-      product_id: null,
-      query_text: customQuery,
-      query_type: "custom",
-      is_active: true,
-    }
-
-    setQueries((prev) => [...prev, newQuery])
-    setSelectedQueries((prev) => [...prev, newQuery.query_id])
-    setCustomQuery("")
-  }
-
-  const processQueries = async () => {
-    if (selectedQueries.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please select at least one query",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const response = await fetch("/api/process-queries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_id: currentJob?.job_id,
-          query_ids: selectedQueries,
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Query processing started! Check results page for updates.",
-        })
-        setCurrentStep(5)
-        setTimeout(() => scrollToStep(5), 100)
-      } else {
-        throw new Error("Failed to process queries")
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to process queries",
-        variant: "destructive",
-      })
-    }
-  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -375,314 +178,113 @@ export default function WorkflowPage() {
     }
   }
 
-  // Group queries by type
-  const groupedQueries = queries.reduce(
-    (acc, query) => {
-      const type = query.query_type || "other"
-      if (!acc[type]) acc[type] = []
-      acc[type].push(query)
-      return acc
-    },
-    {} as Record<string, Query[]>,
-  )
+
 
   return (
-    <div className="min-h-screen relative pb-24 bg-gradient-to-br from-[hsl(var(--primary))]/20 via-white to-white dark:from-[hsl(var(--primary))]/25 dark:via-slate-900 dark:to-slate-950">
-      {/* Decorative background accents */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--accent))/25,transparent_60%)] blur-2xl" />
-        <div className="absolute -bottom-24 -left-24 h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(ellipse_at_center,hsl(var(--primary))/20,transparent_60%)] blur-3xl" />
-      </div>
-      <div className="relative container mx-auto px-6 md:px-8 py-12 max-w-5xl">
-        <div className="mb-10 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-4xl md:text-5xl font-semibold tracking-tight mb-3 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
-              Bodhium Workflow
-            </h1>
-            <p className="text-muted-foreground text-base">Automate brand analysis with AI-powered insights</p>
-          </div>
-          <ThemeToggle />
+    <div className="container mx-auto px-6 md:px-8 py-12 max-w-5xl">
+        <div className="mb-10">
+          <h1 className="text-4xl md:text-5xl font-semibold tracking-tight mb-3 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
+            Bodhium Measurement Tool
+          </h1>
+          <p className="text-muted-foreground text-base">Start your brand analysis by submitting a URL</p>
         </div>
 
-        {/* Step 1: Job Overview & URL Submission */}
-        <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[1] = el }}>
+        {/* URL Submission */}
+        <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
-                1
-              </span>
-              Submit Brand URL
-            </CardTitle>
+            <CardTitle>Submit Brand URL</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="space-y-3">
-                <div className="flex gap-3">
-                  <Input
-                    placeholder="Enter brand URL (e.g., https://store.example.com)"
-                    value={brandUrl}
-                    onChange={(e) => setBrandUrl(e.target.value)}
-                    disabled={currentStep > 1}
-                    className="flex-1 h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
-                  />
-                  
-                </div>
+                <Input
+                  placeholder="Enter brand URL (e.g., https://store.example.com)"
+                  value={brandUrl}
+                  onChange={(e) => setBrandUrl(e.target.value)}
+                  disabled={isSubmitting}
+                  className="h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
+                />
                 <div className="relative">
                   <Input
                     placeholder="Brand name (optional)"
                     value={brandName}
                     onChange={(e) => setBrandName(e.target.value)}
-                    disabled={currentStep > 1}
-                    className="pl-4 pr-4 h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
+                    disabled={isSubmitting}
+                    className="h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
                   />
                   <p className="text-xs text-muted-foreground mt-1.5 pl-1">
                     Leave empty to auto-detect from URL hostname
                   </p>
                 </div>
                 <Button
-                    onClick={submitBrandUrl} 
-                    disabled={isSubmitting || currentStep > 1}
-                    className="px-6 h-11 min-w-[120px] rounded-xl shadow-md"
-                  >
-                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Submit"}
-                  </Button>
-              </div>
-
-              {/* Recent Jobs */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Recent Workflows</h3>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={fetchJobs}>
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setIsWorkflowsExpanded(!isWorkflowsExpanded)}>
-                      {isWorkflowsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-
-                {isWorkflowsExpanded && (
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {Array.isArray(jobs) && jobs.length > 0 ? (
-                      jobs.map((job) => (
-                        <div
-                          key={job.job_id}
-                          className="flex items-center justify-between p-4 bg-white/60 dark:bg-white/5 backdrop-blur-md rounded-xl border border-white/60 dark:border-white/10 shadow-sm"
-                        >
-                          <div className="flex items-center gap-3">
-                            {getStatusIcon(job.status ?? "")}
-                            <div>
-                              <p className="font-medium text-sm">{job.brand_name || "Unknown Brand"}</p>
-                              <p className="text-xs text-muted-foreground">{new Date(job.created_at).toLocaleString()}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={getStatusColor(job.status ?? "")}>{job.status}</Badge>
-                            {job.status === "JOB_SUCCESS" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  // Clear all query-related state when switching jobs
-                                  setQueries([])
-                                  setSelectedQueries([])
-                                  setQueriesExist(false)
-                                  setCustomQuery("")
-                                  setSelectedProducts([])
-                                  
-                                  setCurrentJob(job)
-                                  fetchProducts(job.job_id)
-                                  setCurrentStep(3)
-                                  setTimeout(() => scrollToStep(3), 100)
-                                }}
-                              >
-                                Continue
-                              </Button>
-                            )}
-                            {job.status === "llm_generated" && (
-                              <Button size="sm" variant="outline" onClick={() => window.open("/results", "_blank")}>
-                                Results
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground text-center py-4">No workflows found</p>
-                    )}
-                  </div>
-                )}
+                  onClick={submitBrandUrl} 
+                  disabled={isSubmitting}
+                  className="px-6 h-11 min-w-[120px] rounded-xl shadow-md"
+                >
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Submit"}
+                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Step 2: Job Status */}
-        {currentStep >= 2 && currentJob && (
-          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[2] = el }}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
-                  2
-                </span>
-                Scraping Progress
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                {getStatusIcon(currentJob.status ?? "")}
-                <div>
-                  <p className="font-medium">{currentJob.brand_name}</p>
-                  <p className="text-sm text-muted-foreground">Status: {currentJob.status}</p>
-                </div>
-              </div>
-              {currentJob.status === "JOB_RUNNING" && (
-                <div className="mt-4 p-4 rounded-xl bg-secondary/60 border border-white/60 backdrop-blur">
-                  <p className="text-foreground/80">Scraping in progress... This may take several minutes.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 3: Product Selection */}
-        {currentStep >= 3 && products.length > 0 && (
-          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[3] = el }}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
-                  3
-                </span>
-                Select Products
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ProductSelector
-                products={products}
-                selectedProducts={selectedProducts}
-                onSelectionChange={handleProductSelectionChange}
-                disabled={currentStep > 3}
-              />
-              {currentStep === 3 && (
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={submitProductSelection} disabled={selectedProducts.length === 0}>
-                    Continue to Queries <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 4: Query Selection */}
-        {currentStep >= 4 && (
-          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[4] = el }}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
-                    4
-                  </span>
-                  Select & Add Queries
-                </div>
-                {queriesExist && (
-                  <Button size="sm" variant="outline" onClick={() => checkExistingQueries()}>
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!queriesExist ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground mb-4">No queries found for the selected products. Generate queries to continue.</p>
-                  <Button onClick={generateQueries} disabled={isGeneratingQueries}>
-                    {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Generate Queries
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  {/* Group queries by type */}
-                  {Object.entries(groupedQueries).map(([type, typeQueries]) => (
-                    <div key={type} className="mb-6">
-                      <h3 className="text-lg font-medium mb-3 capitalize">
-                        {type === "product"
-                          ? "Product-Based Queries"
-                          : type === "market"
-                            ? "Market-Based Queries"
-                            : `${type} Queries`}
-                      </h3>
-                      <QuerySelector
-                        queries={typeQueries}
-                        selectedQueries={selectedQueries}
-                        onSelectionChange={setSelectedQueries}
-                        disabled={currentStep > 4}
-                      />
-                    </div>
-                  ))}
-
-                  {currentStep === 4 && (
-                    <div className="mt-6 space-y-4">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Add custom query..."
-                          value={customQuery}
-                          onChange={(e) => setCustomQuery(e.target.value)}
-                          className="h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
-                        />
-                        <Button onClick={addCustomQuery} variant="outline">
-                          Add Query
-                        </Button>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <Button onClick={generateQueries} variant="outline" disabled={isGeneratingQueries}>
-                          {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                          Regenerate Queries
-                        </Button>
-                        <Button onClick={processQueries} disabled={selectedQueries.length === 0}>
-                          Process Queries <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 5: Processing Complete */}
-        {currentStep >= 5 && (
-          <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10" ref={(el) => { stepRefs.current[5] = el }}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm">
-                  5
-                </span>
-                Processing Complete
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">Queries are being processed!</h3>
-                <p className="text-muted-foreground mb-4">
-                  Your queries are being processed by our AI models. This may take several minutes to hours depending on
-                  the workload.
-                </p>
-                <Button onClick={() => window.open("/results", "_blank")}>
-                  View Results <ArrowRight className="ml-2 h-4 w-4" />
+        {/* Recent Jobs */}
+        <Card className="bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Recent Workflows</CardTitle>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={fetchJobs}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setIsWorkflowsExpanded(!isWorkflowsExpanded)}>
+                  {isWorkflowsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      <WorkflowNavigation currentStep={currentStep} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isWorkflowsExpanded && (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {Array.isArray(jobs) && jobs.length > 0 ? (
+                  jobs.map((job) => (
+                    <div
+                      key={job.job_id}
+                      className="flex items-center justify-between p-4 bg-white/60 dark:bg-white/5 backdrop-blur-md rounded-xl border border-white/60 dark:border-white/10 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        {getStatusIcon(job.status ?? "")}
+                        <div>
+                          <p className="font-medium text-sm">{job.brand_name || "Unknown Brand"}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(job.created_at).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getStatusColor(job.status ?? "")}>{job.status}</Badge>
+                        {job.status === "JOB_SUCCESS" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => router.push("/products")}
+                          >
+                            Products <ArrowRight className="ml-1 h-3 w-3" />
+                          </Button>
+                        )}
+                        {job.status === "llm_generated" && (
+                          <Button size="sm" variant="outline" onClick={() => router.push("/results")}>
+                            Results <ArrowRight className="ml-1 h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No workflows found</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
     </div>
   )
 }
