@@ -48,20 +48,27 @@ export default function ResultsPage() {
     // Transform products data into table rows
     const rows: TableRow[] = []
     
-    results.products.forEach((product) => {
-      product.workers.forEach((worker) => {
-        worker.results.forEach((result) => {
-          rows.push({
-            id: `${product.product_id}-${worker.worker_type}-${result.query_id}`,
-            brand: product.brand_name || "Unknown Brand",
-            productName: product.product_name || `Product ${product.product_id}`,
-            query: result.query,
-            workerType: worker.worker_type,
-            fullResult: result
+    // Safety check to ensure results.products exists and is an array
+    if (results?.products && Array.isArray(results.products)) {
+      results.products.forEach((product) => {
+        if (product?.workers && Array.isArray(product.workers)) {
+          product.workers.forEach((worker) => {
+            if (worker?.results && Array.isArray(worker.results)) {
+              worker.results.forEach((result) => {
+                rows.push({
+                  id: `${product.product_id}-${worker.worker_type}-${result.query_id}`,
+                  brand: product.brand_name || "Unknown Brand",
+                  productName: product.product_name || `Product ${product.product_id}`,
+                  query: result.query,
+                  workerType: worker.worker_type,
+                  fullResult: result
+                })
+              })
+            }
           })
-        })
+        }
       })
-    })
+    }
     
     setTableData(rows)
   }, [results])

@@ -443,11 +443,14 @@ export default function QueriesPage() {
                         {selectedProducts.length} products selected
                       </Badge>
                     </CardTitle>
-                    {queriesExist && (
-                      <Button size="sm" variant="outline" onClick={() => selectedJob && checkExistingQueries(selectedJob.job_id, selectedProducts)}>
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => selectedJob && checkExistingQueries(selectedJob.job_id, selectedProducts)}
+                      title="Refresh queries from database"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>

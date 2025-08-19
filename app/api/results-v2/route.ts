@@ -38,6 +38,20 @@ export async function GET(request: Request) {
       }
     }
     
+    // Filter product IDs to only include valid integers (bigint compatible)
+    const allProductIdsArray = Array.from(allProductIds)
+    const validProductIds = allProductIdsArray.filter(id => {
+      // Check if the ID is a valid integer (not a UUID)
+      return /^\d+$/.test(id)
+    })
+    
+    // Log for debugging
+    console.log(`Found ${allProductIdsArray.length} product IDs, ${validProductIds.length} are valid integers`)
+    if (allProductIdsArray.length !== validProductIds.length) {
+      const invalidIds = allProductIdsArray.filter(id => !/^\d+$/.test(id))
+      console.log('Invalid product IDs (UUIDs):', invalidIds.slice(0, 5)) // Log first 5 for debugging
+    }
+    
     // Step 3: Get additional info from RDS
     const [jobsData, productsData] = await Promise.all([
       // Get job information for brand names
@@ -47,12 +61,12 @@ export async function GET(request: Request) {
         WHERE job_id = ANY($1)
       `, [jobIds]),
       
-      // Get product information  
-      executeQuery(`
+      // Get product information (only for valid integer product IDs)
+      validProductIds.length > 0 ? executeQuery(`
         SELECT product_id, product_data, brand_name
         FROM products
         WHERE product_id = ANY($1)
-      `, [Array.from(allProductIds)])
+      `, [validProductIds.map(id => parseInt(id))]) : Promise.resolve([])
     ])
     
     // Create lookup maps
