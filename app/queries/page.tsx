@@ -129,9 +129,18 @@ export default function QueriesPage() {
     const brandJobs = jobs.filter(job => job.brand_name === brand)
     setFilteredJobs(brandJobs)
     
+    // Automatically select the latest job (most recent by created_at)
+    if (brandJobs.length > 0) {
+      const latestJob = brandJobs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+      setSelectedJob(latestJob)
+      fetchProducts(latestJob.job_id)
+      
+      // Store in localStorage
+      localStorage.setItem('selectedJobId', latestJob.job_id)
+    }
+    
     // Store in localStorage
     localStorage.setItem('selectedBrand', brand)
-    localStorage.removeItem('selectedJobId')
     localStorage.removeItem('selectedProducts')
   }
 
@@ -340,18 +349,18 @@ export default function QueriesPage() {
           </Card>
         ) : (
           <>
-            {/* Brand and Job Selection */}
+            {/* Brand Selection */}
             <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Select Brand & Job</CardTitle>
+                  <CardTitle>Select Brand</CardTitle>
                   <Button size="sm" variant="outline" onClick={fetchJobs}>
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-4">
                   {/* Brand Dropdown */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Brand</label>
@@ -369,27 +378,17 @@ export default function QueriesPage() {
                     </select>
                   </div>
 
-                  {/* Job Dropdown */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Job</label>
-                    <select
-                      value={selectedJob?.job_id || ""}
-                      onChange={(e) => {
-                        const selectedJobId = e.target.value
-                        const job = filteredJobs.find(j => j.job_id === selectedJobId)
-                        if (job) handleJobSelect(job)
-                      }}
-                      disabled={!selectedBrand}
-                      className="w-full h-11 px-3 rounded-xl bg-white/60 dark:bg-white/10 border border-white/60 dark:border-white/10 disabled:opacity-50"
-                    >
-                      <option value="">Select a job...</option>
-                      {filteredJobs.map((job) => (
-                        <option key={job.job_id} value={job.job_id}>
-                          {new Date(job.created_at).toLocaleDateString()} - {job.source_url?.slice(0, 50)}...
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Show selected job info */}
+                  {selectedJob && (
+                    <div className="space-y-2">
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Showing products scraped on {new Date(selectedJob.created_at).toLocaleDateString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {selectedJob.source_url}
+                        </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -412,12 +411,14 @@ export default function QueriesPage() {
                     </div>
                   ) : (
                     <>
-                      <ProductSelector
-                        products={products}
-                        selectedProducts={selectedProducts}
-                        onSelectionChange={handleProductSelectionChange}
-                        disabled={false}
-                      />
+                      <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800">
+                        <ProductSelector
+                          products={products}
+                          selectedProducts={selectedProducts}
+                          onSelectionChange={handleProductSelectionChange}
+                          disabled={false}
+                        />
+                      </div>
                       {selectedProducts.length > 0 && (
                         <div className="mt-4 flex justify-end">
                           <Button onClick={submitProductSelection}>

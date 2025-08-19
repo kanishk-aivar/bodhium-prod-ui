@@ -14,17 +14,26 @@ interface JobData {
   brand_name: string | null
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Extract job_id from URL parameters
+    const { searchParams } = new URL(request.url)
+    const filterJobId = searchParams.get('job_id')
+    
     // Step 1: Query S3 for all results in the new structure
     const s3Results = await getAllJobResults()
     
-    // Step 2: Extract unique job_ids and product_ids from S3 data
-    const jobIds = Object.keys(s3Results)
+    // Step 2: Filter by job_id if provided, then extract unique job_ids and product_ids from S3 data
+    let filteredS3Results = s3Results
+    if (filterJobId) {
+      filteredS3Results = { [filterJobId]: s3Results[filterJobId] || {} }
+    }
+    
+    const jobIds = Object.keys(filteredS3Results)
     const allProductIds = new Set<string>()
     
     for (const jobId of jobIds) {
-      for (const productId of Object.keys(s3Results[jobId])) {
+      for (const productId of Object.keys(filteredS3Results[jobId])) {
         allProductIds.add(productId)
       }
     }
@@ -60,7 +69,7 @@ export async function GET() {
     // Step 4: Process S3 results and combine with RDS data
     const productResults: ProductResult[] = []
     
-    for (const [jobId, jobProducts] of Object.entries(s3Results)) {
+    for (const [jobId, jobProducts] of Object.entries(filteredS3Results)) {
       const jobInfo = jobsMap.get(jobId)
       
       for (const [productId, files] of Object.entries(jobProducts)) {

@@ -11,7 +11,7 @@ import { Search, Loader2, RefreshCw, Eye, ChevronLeft, ChevronRight, Filter } fr
 import { useToast } from "../hooks/use-toast"
 import { ResponseContent } from "@/components/ui/response-content"
 import JSZip from "jszip"
-import type { NewResultsResponse, ProductResult, S3WorkerResult } from "../lib/types"
+import type { NewResultsResponse, ProductResult, S3WorkerResult, ScrapeJob } from "../lib/types"
 
 interface TableRow {
   id: string
@@ -31,12 +31,16 @@ export default function ResultsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedRow, setSelectedRow] = useState<TableRow | null>(null)
+  const [jobs, setJobs] = useState<ScrapeJob[]>([])
+  const [selectedJobId, setSelectedJobId] = useState<string>("all")
+  const [isLoadingJobs, setIsLoadingJobs] = useState(false)
   
   const ROWS_PER_PAGE = 30
 
   const { toast } = useToast()
 
   useEffect(() => {
+    fetchJobs()
     fetchResults()
   }, [])
 
@@ -62,9 +66,36 @@ export default function ResultsPage() {
     setTableData(rows)
   }, [results])
 
-  const fetchResults = async () => {
+  const fetchJobs = async () => {
     try {
-      const response = await fetch("/api/results-v2")
+      setIsLoadingJobs(true)
+      const response = await fetch("/api/jobs")
+      const data = await response.json()
+      
+      if (Array.isArray(data)) {
+        const successfulJobs = data.filter((job: ScrapeJob) => job.status === "JOB_SUCCESS")
+        setJobs(successfulJobs)
+      } else {
+        setJobs([])
+      }
+    } catch (error) {
+      console.error("Error fetching jobs:", error)
+      setJobs([])
+      toast({
+        title: "Error",
+        description: "Failed to fetch jobs",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoadingJobs(false)
+    }
+  }
+
+  const fetchResults = async (jobId?: string) => {
+    try {
+      setIsLoading(true)
+      const url = jobId && jobId !== "all" ? `/api/results-v2?job_id=${jobId}` : "/api/results-v2"
+      const response = await fetch(url)
       const data = await response.json()
       setResults(data)
       setIsLoading(false)
@@ -104,10 +135,28 @@ export default function ResultsPage() {
   const uniqueBrands = Array.from(new Set(tableData.map(row => row.brand))).sort()
   const uniqueWorkers = Array.from(new Set(tableData.map(row => row.workerType))).sort()
 
+  // Get jobs filtered by selected brand
+  const filteredJobs = brandFilter === "all" 
+    ? jobs 
+    : jobs.filter(job => job.brand_name === brandFilter)
+
+  // Handle job selection change
+  const handleJobChange = (jobId: string) => {
+    setSelectedJobId(jobId)
+    fetchResults(jobId === "all" ? undefined : jobId)
+  }
+
+  // Handle brand filter change - reset job selection when brand changes
+  const handleBrandFilterChange = (brand: string) => {
+    setBrandFilter(brand)
+    setSelectedJobId("all")
+    fetchResults()
+  }
+
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, brandFilter, workerFilter])
+  }, [searchTerm, brandFilter, workerFilter, selectedJobId])
 
   const getWorkerBadgeColor = (workerType: string) => {
     switch (workerType) {
@@ -216,7 +265,7 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="container mx-auto px-6 md:px-8 py-10 max-w-7xl">
+    <div className="container mx-auto px-6 md:px-8 py-10">
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
@@ -235,7 +284,10 @@ export default function ResultsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchResults}>
+          <Button variant="outline" onClick={() => {
+            fetchJobs()
+            fetchResults(selectedJobId === "all" ? undefined : selectedJobId)
+          }}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -248,7 +300,6 @@ export default function ResultsPage() {
           <div className="flex flex-col gap-4">
             <div className="flex gap-4">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search by brand, product, query, or AI model..."
                   value={searchTerm}
@@ -263,12 +314,26 @@ export default function ResultsPage() {
               <div className="flex gap-4">
                 <select
                   value={brandFilter}
-                  onChange={(e) => setBrandFilter(e.target.value)}
+                  onChange={(e) => handleBrandFilterChange(e.target.value)}
                   className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
                 >
                   <option value="all">All Brands</option>
                   {uniqueBrands.map((brand) => (
                     <option key={brand} value={brand}>{brand}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedJobId}
+                  onChange={(e) => handleJobChange(e.target.value)}
+                  className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isLoadingJobs || brandFilter === "all"}
+                >
+                  <option value="all">All Jobs</option>
+                  {filteredJobs.map((job) => (
+                    <option key={job.job_id} value={job.job_id}>
+                      {new Date(job.created_at).toLocaleDateString()} - {job.source_url?.slice(0, 40)}...
+                    </option>
                   ))}
                 </select>
                 

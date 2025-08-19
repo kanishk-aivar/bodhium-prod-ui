@@ -23,6 +23,7 @@ if [ $? -ne 0 ]; then
     echo "❌ Error: Failed to build image"
     exit 1
 fi
+
 # Create ECR repository if it doesn't exist
 echo "🏗️ Creating ECR repository..."
 aws ecr create-repository --repository-name $REPO_NAME --region $REGION 2>/dev/null || echo "Repository already exists or error occurred"
