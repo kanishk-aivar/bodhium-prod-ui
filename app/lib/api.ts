@@ -1,13 +1,14 @@
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda"
 import { Pool } from "pg"
 
-// AWS Configuration
+// AWS Configuration - Uses IAM Task Role when running in ECS
 const lambdaClient = new LambdaClient({
   region: process.env.AWS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
+  // No explicit credentials - uses default credential provider chain
+  // This will automatically use:
+  // 1. ECS Task Role (when running in ECS)
+  // 2. EC2 Instance Profile (when running on EC2)  
+  // 3. Environment variables (when running locally)
 })
 
 // Lambda ARNs from environment variables

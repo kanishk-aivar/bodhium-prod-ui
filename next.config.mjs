@@ -1,8 +1,7 @@
 const nextConfig = {
   env: {
     AWS_REGION: process.env.AWS_REGION,
-    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+    // AWS credentials removed - using IAM Task Role instead
     RDS_HOST: process.env.RDS_HOST,
     RDS_PORT: process.env.RDS_PORT,
     RDS_DATABASE: process.env.RDS_DATABASE,
@@ -28,10 +27,8 @@ const nextConfig = {
     ],
     unoptimized: true,
   },
-  // Force Node.js runtime for API routes
-  experimental: {
-    runtime: 'nodejs',
-  },
+  // Enable standalone output for Docker
+  output: 'standalone',
 }
 
 export default nextConfig
