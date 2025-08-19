@@ -6,103 +6,63 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { Search, Loader2, RefreshCw, Eye, ChevronLeft, ChevronRight, Filter } from "lucide-react"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Search, Loader2, RefreshCw, Eye, ChevronLeft, ChevronRight, Filter, Download } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
-import { ResponseContent } from "@/components/ui/response-content"
-import JSZip from "jszip"
-import type { NewResultsResponse, ProductResult, S3WorkerResult, ScrapeJob } from "../lib/types"
+import { TaskResponseContent } from "@/components/ui/task-response-content"
+import type { RDSResultsResponse, RDSTaskResult } from "../lib/types"
 
 interface TableRow {
   id: string
   brand: string
   productName: string
   query: string
-  workerType: string
-  fullResult: S3WorkerResult
+  status: string
+  llmModel: string
+  createdAt: string
+  completedAt: string | null
+  task: RDSTaskResult
 }
 
 export default function ResultsPage() {
-  const [results, setResults] = useState<NewResultsResponse>({ products: [], total_results: 0 })
+  const [results, setResults] = useState<RDSResultsResponse>({ tasks: [], total_count: 0 })
   const [tableData, setTableData] = useState<TableRow[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [brandFilter, setBrandFilter] = useState<string>("all")
-  const [workerFilter, setWorkerFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [modelFilter, setModelFilter] = useState<string>("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedRow, setSelectedRow] = useState<TableRow | null>(null)
-  const [jobs, setJobs] = useState<ScrapeJob[]>([])
-  const [selectedJobId, setSelectedJobId] = useState<string>("all")
-  const [isLoadingJobs, setIsLoadingJobs] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<RDSTaskResult | null>(null)
   
   const ROWS_PER_PAGE = 30
 
   const { toast } = useToast()
 
   useEffect(() => {
-    fetchJobs()
     fetchResults()
   }, [])
 
   useEffect(() => {
-    // Transform products data into table rows
-    const rows: TableRow[] = []
-    
-    // Safety check to ensure results.products exists and is an array
-    if (results?.products && Array.isArray(results.products)) {
-      results.products.forEach((product) => {
-        if (product?.workers && Array.isArray(product.workers)) {
-          product.workers.forEach((worker) => {
-            if (worker?.results && Array.isArray(worker.results)) {
-              worker.results.forEach((result) => {
-                rows.push({
-                  id: `${product.product_id}-${worker.worker_type}-${result.query_id}`,
-                  brand: product.brand_name || "Unknown Brand",
-                  productName: product.product_name || `Product ${product.product_id}`,
-                  query: result.query,
-                  workerType: worker.worker_type,
-                  fullResult: result
-                })
-              })
-            }
-          })
-        }
-      })
-    }
+    // Transform tasks data into table rows
+    const rows: TableRow[] = results.tasks.map((task) => ({
+      id: task.task_id,
+      brand: task.brand_name || "Unknown Brand",
+      productName: task.product_name || `Product ${task.product_id}`,
+      query: task.query_text || "No query text",
+      status: task.status || "unknown",
+      llmModel: task.llm_model_name || "Unknown Model",
+      createdAt: task.created_at,
+      completedAt: task.completed_at,
+      task: task
+    }))
     
     setTableData(rows)
   }, [results])
 
-  const fetchJobs = async () => {
+  const fetchResults = async () => {
     try {
-      setIsLoadingJobs(true)
-      const response = await fetch("/api/jobs")
-      const data = await response.json()
-      
-      if (Array.isArray(data)) {
-        const successfulJobs = data.filter((job: ScrapeJob) => job.status === "JOB_SUCCESS")
-        setJobs(successfulJobs)
-      } else {
-        setJobs([])
-      }
-    } catch (error) {
-      console.error("Error fetching jobs:", error)
-      setJobs([])
-      toast({
-        title: "Error",
-        description: "Failed to fetch jobs",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoadingJobs(false)
-    }
-  }
-
-  const fetchResults = async (jobId?: string) => {
-    try {
-      setIsLoading(true)
-      const url = jobId && jobId !== "all" ? `/api/results-v2?job_id=${jobId}` : "/api/results-v2"
-      const response = await fetch(url)
+      const response = await fetch("/api/results-rds")
       const data = await response.json()
       setResults(data)
       setIsLoading(false)
@@ -122,14 +82,14 @@ export default function ResultsPage() {
       row.brand.toLowerCase().includes(searchLower) ||
       row.productName.toLowerCase().includes(searchLower) ||
       row.query.toLowerCase().includes(searchLower) ||
-      row.workerType.toLowerCase().includes(searchLower) ||
-      row.fullResult.content.toLowerCase().includes(searchLower)
+      row.llmModel.toLowerCase().includes(searchLower)
     )
     
     const matchesBrand = brandFilter === "all" || row.brand === brandFilter
-    const matchesWorker = workerFilter === "all" || row.workerType === workerFilter
+    const matchesStatus = statusFilter === "all" || row.status === statusFilter
+    const matchesModel = modelFilter === "all" || row.llmModel === modelFilter
     
-    return matchesSearch && matchesBrand && matchesWorker
+    return matchesSearch && matchesBrand && matchesStatus && matchesModel
   })
 
   // Pagination logic
@@ -140,107 +100,88 @@ export default function ResultsPage() {
 
   // Get unique values for filters
   const uniqueBrands = Array.from(new Set(tableData.map(row => row.brand))).sort()
-  const uniqueWorkers = Array.from(new Set(tableData.map(row => row.workerType))).sort()
-
-  // Get jobs filtered by selected brand
-  const filteredJobs = brandFilter === "all" 
-    ? jobs 
-    : jobs.filter(job => job.brand_name === brandFilter)
-
-  // Handle job selection change
-  const handleJobChange = (jobId: string) => {
-    setSelectedJobId(jobId)
-    fetchResults(jobId === "all" ? undefined : jobId)
-  }
-
-  // Handle brand filter change - reset job selection when brand changes
-  const handleBrandFilterChange = (brand: string) => {
-    setBrandFilter(brand)
-    setSelectedJobId("all")
-    fetchResults()
-  }
+  const uniqueStatuses = Array.from(new Set(tableData.map(row => row.status))).sort()
+  const uniqueModels = Array.from(new Set(tableData.map(row => row.llmModel))).sort()
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, brandFilter, workerFilter, selectedJobId])
+  }, [searchTerm, brandFilter, statusFilter, modelFilter])
 
-  const getWorkerBadgeColor = (workerType: string) => {
-    switch (workerType) {
-      case "aio":
+  const getStatusBadgeColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+      case "failed":
+        return "bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/20"
+      case "processing":
         return "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
-      case "aim":
-        return "bg-green-500/15 text-green-700 dark:text-green-300 border border-green-500/20"
-      case "perplexity":
-        return "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/20"
-      case "chatgpt":
-        return "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/20"
       default:
-        return "bg-gray-500/15 text-gray-700 dark:text-gray-300 border border-gray-500/20"
+        return "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20"
     }
   }
 
-  const getWorkerDisplayName = (workerType: string) => {
-    switch (workerType) {
-      case "aio":
-        return "Google AI Overview"
-      case "aim":
-        return "Google AI Mode"
-      case "perplexity":
-        return "Perplexity"
-      case "chatgpt":
-        return "ChatGPT"
-      default:
-        return workerType.toUpperCase()
+  const getModelBadgeColor = (model: string) => {
+    const modelLower = model.toLowerCase()
+    if (modelLower.includes("chatgpt")) {
+      return "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/20"
+    } else if (modelLower.includes("perplexity")) {
+      return "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/20"
+    } else if (modelLower.includes("aimode") || modelLower.includes("ai_mode")) {
+      return "bg-green-500/15 text-green-700 dark:text-green-300 border border-green-500/20"
+    } else if (modelLower.includes("aioverview") || modelLower.includes("aio")) {
+      return "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
     }
+    return "bg-gray-500/15 text-gray-700 dark:text-gray-300 border border-gray-500/20"
   }
 
-
-
-  const downloadQueryResult = async (result: S3WorkerResult, productName: string, brand: string) => {
+  const downloadTaskResult = async (task: RDSTaskResult) => {
     try {
-      const zip = new JSZip()
+      if (!task.s3_output_path) {
+        toast({
+          title: "Error",
+          description: "No S3 output path available for this task",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Fetch content directly from S3
+      const response = await fetch(`/api/task-content/${task.task_id}`)
+      const data = await response.json()
       
-      // Create a filename-safe string
-      const safeProductName = productName.replace(/[^a-z0-9]/gi, '_')
-      const safeBrand = brand.replace(/[^a-z0-9]/gi, '_')
-      const timestamp = new Date(result.timestamp).toISOString().split('T')[0]
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch task content")
+      }
+
+      if (!data.s3_content) {
+        throw new Error("No S3 content available")
+      }
+
+      // Create filename-safe strings
+      const safeBrand = (task.brand_name || "Unknown").replace(/[^a-z0-9]/gi, '_')
+      const safeProduct = (task.product_name || "Unknown").replace(/[^a-z0-9]/gi, '_')
+      const safeModel = (task.llm_model_name || "Unknown").replace(/[^a-z0-9]/gi, '_')
+      const timestamp = new Date(task.created_at).toISOString().split('T')[0]
       
-      // Add the main content
-      const mainContent = result.formatted_markdown || result.content
-      const fileExtension = result.formatted_markdown ? 'md' : 'txt'
+      // Determine file extension based on S3 path
+      const fileExtension = task.s3_output_path.endsWith('.json') ? 'json' : 
+                           task.s3_output_path.endsWith('.md') ? 'md' : 'txt'
       
-      zip.file(
-        `${safeBrand}_${safeProductName}_${result.model}_query_${result.query_id}.${fileExtension}`,
-        mainContent
-      )
-      
-      // Add metadata as JSON
-      const metadata = {
-        query: result.query,
-        model: result.model,
-        timestamp: result.timestamp,
-        brand: brand,
-        product: productName,
-        query_id: result.query_id,
-        job_id: result.job_id,
-        product_id: result.product_id,
-        links: result.links || [],
-        related_questions: result.related_questions || [],
-        metadata: result.metadata || {}
+      // Create file content
+      let content: string
+      if (typeof data.s3_content === 'string') {
+        content = data.s3_content
+      } else {
+        content = JSON.stringify(data.s3_content, null, 2)
       }
       
-      zip.file(
-        `${safeBrand}_${safeProductName}_${result.model}_query_${result.query_id}_metadata.json`,
-        JSON.stringify(metadata, null, 2)
-      )
-      
-      // Generate and download the zip
-      const content = await zip.generateAsync({ type: "blob" })
-      const url = window.URL.createObjectURL(content)
+      // Create and download the file
+      const blob = new Blob([content], { type: 'text/plain' })
+      const url = window.URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = url
-      link.download = `${safeBrand}_${safeProductName}_${result.model}_${timestamp}.zip`
+      link.download = `${safeBrand}_${safeProduct}_${safeModel}_${timestamp}.${fileExtension}`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -248,13 +189,13 @@ export default function ResultsPage() {
       
       toast({
         title: "Success",
-        description: "Query result downloaded successfully!",
+        description: "S3 content downloaded successfully!",
       })
     } catch (error) {
       console.error("Download error:", error)
       toast({
         title: "Error",
-        description: "Failed to download query result",
+        description: "Failed to download S3 content",
         variant: "destructive",
       })
     }
@@ -272,18 +213,17 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="container mx-auto px-6 md:px-8 py-10">
+    <div className="container mx-auto px-6 md:px-8 py-10 max-w-7xl">
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
-            AI Results Dashboard
+            AI Task Results
           </h1>
           <p className="text-muted-foreground">
-            View detailed AI processing results organized by product and query
+            View and manage AI processing tasks from the database
           </p>
           <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
-            <span>{results.total_results} products</span>
-            <span>{tableData.length} total results</span>
+            <span>{results.total_count} total tasks</span>
             <span>{filteredData.length} filtered results</span>
             {totalPages > 1 && (
               <span>Page {currentPage} of {totalPages}</span>
@@ -291,10 +231,7 @@ export default function ResultsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => {
-            fetchJobs()
-            fetchResults(selectedJobId === "all" ? undefined : selectedJobId)
-          }}>
+          <Button variant="outline" onClick={fetchResults}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -307,6 +244,7 @@ export default function ResultsPage() {
           <div className="flex flex-col gap-4">
             <div className="flex gap-4">
               <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search by brand, product, query, or AI model..."
                   value={searchTerm}
@@ -318,10 +256,10 @@ export default function ResultsPage() {
             
             <div className="flex gap-4 items-center">
               <Filter className="h-4 w-4 text-muted-foreground" />
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap">
                 <select
                   value={brandFilter}
-                  onChange={(e) => handleBrandFilterChange(e.target.value)}
+                  onChange={(e) => setBrandFilter(e.target.value)}
                   className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
                 >
                   <option value="all">All Brands</option>
@@ -329,29 +267,26 @@ export default function ResultsPage() {
                     <option key={brand} value={brand}>{brand}</option>
                   ))}
                 </select>
-
-                <select
-                  value={selectedJobId}
-                  onChange={(e) => handleJobChange(e.target.value)}
-                  className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isLoadingJobs || brandFilter === "all"}
-                >
-                  <option value="all">All Jobs</option>
-                  {filteredJobs.map((job) => (
-                    <option key={job.job_id} value={job.job_id}>
-                      {new Date(job.created_at).toLocaleDateString()} - {job.source_url?.slice(0, 40)}...
-                    </option>
-                  ))}
-                </select>
                 
                 <select
-                  value={workerFilter}
-                  onChange={(e) => setWorkerFilter(e.target.value)}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
+                >
+                  <option value="all">All Statuses</option>
+                  {uniqueStatuses.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={modelFilter}
+                  onChange={(e) => setModelFilter(e.target.value)}
                   className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
                 >
                   <option value="all">All AI Models</option>
-                  {uniqueWorkers.map((worker) => (
-                    <option key={worker} value={worker}>{getWorkerDisplayName(worker)}</option>
+                  {uniqueModels.map((model) => (
+                    <option key={model} value={model}>{model}</option>
                   ))}
                 </select>
               </div>
@@ -363,7 +298,7 @@ export default function ResultsPage() {
       {/* Results Table */}
       <Card className="bg-white/60 dark:bg-white/5 backdrop-blur border border-white/60 dark:border-white/10">
         <CardHeader>
-          <CardTitle className="text-lg">AI Processing Results</CardTitle>
+          <CardTitle className="text-lg">AI Processing Tasks</CardTitle>
         </CardHeader>
         <CardContent>
           {filteredData.length === 0 ? (
@@ -372,8 +307,8 @@ export default function ResultsPage() {
               <h3 className="text-lg font-medium mb-2">No Results Found</h3>
               <p className="text-muted-foreground">
                 {tableData.length === 0 
-                  ? "No AI processing results available"
-                  : "No results match your search criteria"
+                  ? "No AI processing tasks available"
+                  : "No tasks match your search criteria"
                 }
               </p>
             </div>
@@ -383,121 +318,133 @@ export default function ResultsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[150px]">Brand</TableHead>
-                      <TableHead className="w-[250px]">Product Name</TableHead>
-                      <TableHead className="w-[350px]">Query</TableHead>
-                      <TableHead className="w-[150px]">AI Model</TableHead>
+                      <TableHead className="w-[120px]">Brand</TableHead>
+                      <TableHead className="w-[200px]">Product Name</TableHead>
+                      <TableHead className="w-[300px]">Query</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead className="w-[120px]">AI Model</TableHead>
+                      <TableHead className="w-[120px]">Created</TableHead>
                       <TableHead className="w-[100px]">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedData.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium">
-                        <div className="max-w-[150px]">
-                          <p className="truncate" title={row.brand}>
-                            {row.brand}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-w-[250px]">
-                          <p className="truncate" title={row.productName}>
-                            {row.productName}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-w-[350px]">
-                          <p className="truncate" title={row.query}>
-                            {row.query}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getWorkerBadgeColor(row.workerType)}>
-                          {getWorkerDisplayName(row.workerType)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => setSelectedRow(row)}
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)} of {filteredData.length} results
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(currentPage - 1)}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </Button>
-                  
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum
-                      if (totalPages <= 5) {
-                        pageNum = i + 1
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i
-                      } else {
-                        pageNum = currentPage - 2 + i
-                      }
-                      
-                      return (
-                        <Button
-                          key={pageNum}
-                          variant={currentPage === pageNum ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(pageNum)}
-                          className="w-8 h-8 p-0"
-                        >
-                          {pageNum}
-                        </Button>
-                      )
-                    })}
-                  </div>
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">
+                          <div className="max-w-[120px]">
+                            <p className="truncate" title={row.brand}>
+                              {row.brand}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="max-w-[200px]">
+                            <p className="truncate" title={row.productName}>
+                              {row.productName}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="max-w-[300px]">
+                            <p className="truncate" title={row.query}>
+                              {row.query}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getStatusBadgeColor(row.status)}>
+                            {row.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getModelBadgeColor(row.llmModel)}>
+                            {row.llmModel}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-muted-foreground">
+                            {new Date(row.createdAt).toLocaleDateString()}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setSelectedTask(row.task)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-            )}
+              
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)} of {filteredData.length} results
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum
+                        if (totalPages <= 5) {
+                          pageNum = i + 1
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i
+                        } else {
+                          pageNum = currentPage - 2 + i
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={currentPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurrentPage(pageNum)}
+                            className="w-8 h-8 p-0"
+                          >
+                            {pageNum}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* Response Details Sheet */}
-      <Sheet open={selectedRow !== null} onOpenChange={(open) => !open && setSelectedRow(null)}>
+      {/* Task Details Sheet */}
+      <Sheet open={selectedTask !== null} onOpenChange={(open) => !open && setSelectedTask(null)}>
         <SheetContent 
           className="overflow-y-auto" 
           side="right"
@@ -506,19 +453,17 @@ export default function ResultsPage() {
           minWidth={500}
           maxWidth={1000}
         >
-          {selectedRow && (
+          {selectedTask && (
             <>
               <SheetHeader>
                 <SheetTitle className="text-left">
-                  {selectedRow.brand} - {selectedRow.productName}
+                  {selectedTask.brand_name} - {selectedTask.product_name}
                 </SheetTitle>
               </SheetHeader>
               <div className="mt-6">
-                <ResponseContent
-                  result={selectedRow.fullResult}
-                  productName={selectedRow.productName}
-                  brand={selectedRow.brand}
-                  onDownload={downloadQueryResult}
+                <TaskResponseContent
+                  task={selectedTask}
+                  onDownload={downloadTaskResult}
                 />
               </div>
             </>

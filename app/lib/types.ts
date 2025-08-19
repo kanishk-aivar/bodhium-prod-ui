@@ -86,3 +86,31 @@ export interface NewResultsResponse {
   products: ProductResult[]
   total_results: number
 }
+
+// RDS-based result types
+export interface RDSTaskResult {
+  task_id: string
+  job_id: string | null
+  query_id: number | null
+  llm_model_name: string | null
+  status: string | null
+  s3_output_path: string | null
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+  product_id: number | null
+  product_name: string | null
+  query_text: string | null
+  query_type: string | null
+  brand_name: string | null
+  product_data: any
+}
+
+export interface RDSResultsResponse {
+  tasks: RDSTaskResult[]
+  total_count: number
+}
+
+export interface TaskContentResponse extends RDSTaskResult {
+  s3_content: any
+}

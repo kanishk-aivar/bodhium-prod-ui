@@ -79,7 +79,7 @@ export default function HomePage() {
       if (response.ok) {
         toast({
           title: "Success",
-          description: `Job submitted successfully! Job ID: ${data.job_id}`,
+          description: `Job submitted successfully!`,
         })
 
         const newJob: ScrapeJob = {

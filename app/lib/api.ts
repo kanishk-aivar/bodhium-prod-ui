@@ -116,8 +116,22 @@ export async function listS3Objects(prefix: string) {
   }
 }
 
-export async function getS3Object(key: string) {
+export async function getS3Object(s3Path: string) {
   try {
+    // Strip s3://bodhium-temp/ prefix if present
+    let key = s3Path
+    if (s3Path.startsWith('s3://bodhium-temp/')) {
+      key = s3Path.replace('s3://bodhium-temp/', '')
+    } else if (s3Path.startsWith('s3://')) {
+      // Handle other S3 URI formats
+      const parts = s3Path.replace('s3://', '').split('/')
+      if (parts.length > 1) {
+        key = parts.slice(1).join('/') // Remove bucket name, keep the rest as key
+      }
+    }
+
+    console.log(`Fetching S3 object with key: ${key} from bucket: ${NEW_S3_BUCKET}`)
+    
     const command = new GetObjectCommand({
       Bucket: NEW_S3_BUCKET,
       Key: key,
