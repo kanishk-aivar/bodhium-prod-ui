@@ -47,3 +47,42 @@ export interface JobWithTasks {
 }
 
 export type GroupedResults = Record<string, JobWithTasks>
+
+// New S3-based result types
+export interface S3FileContent {
+  fileName: string
+  content: any
+  key: string
+  lastModified?: Date
+}
+
+export interface S3WorkerResult {
+  job_id: string
+  product_id: string
+  query_id: number
+  query: string
+  timestamp: string
+  model: string
+  content: string
+  formatted_markdown?: string
+  links?: Array<{ text: string; url: string }>
+  related_questions?: string[]
+  metadata?: any
+  status: string
+}
+
+export interface ProductResult {
+  product_id: string
+  job_id: string
+  brand_name?: string
+  product_name?: string
+  workers: Array<{
+    worker_type: string // aio, aim, perplexity, chatgpt
+    results: S3WorkerResult[]
+  }>
+}
+
+export interface NewResultsResponse {
+  products: ProductResult[]
+  total_results: number
+}

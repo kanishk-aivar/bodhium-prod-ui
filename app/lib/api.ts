@@ -1,4 +1,5 @@
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda"
+import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3"
 import { Pool } from "pg"
 
 // AWS Configuration - Uses IAM Task Role when running in ECS
@@ -9,6 +10,11 @@ const lambdaClient = new LambdaClient({
   // 1. ECS Task Role (when running in ECS)
   // 2. EC2 Instance Profile (when running on EC2)  
   // 3. Environment variables (when running locally)
+})
+
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || "us-east-1",
+  // Uses same credential provider chain as Lambda client
 })
 
 // Lambda ARNs from environment variables
@@ -90,4 +96,95 @@ export function createApiResponse(data: any, status = 200) {
 
 export function createErrorResponse(message: string, status = 500) {
   return createApiResponse({ error: message }, status)
+}
+
+// S3 Helper Functions for new bucket structure
+const NEW_S3_BUCKET = "bodhium-temp"
+
+export async function listS3Objects(prefix: string) {
+  try {
+    const command = new ListObjectsV2Command({
+      Bucket: NEW_S3_BUCKET,
+      Prefix: prefix,
+    })
+    
+    const response = await s3Client.send(command)
+    return response.Contents || []
+  } catch (error) {
+    console.error("S3 list objects error:", error)
+    throw error
+  }
+}
+
+export async function getS3Object(key: string) {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: NEW_S3_BUCKET,
+      Key: key,
+    })
+    
+    const response = await s3Client.send(command)
+    
+    if (response.Body) {
+      const content = await response.Body.transformToString()
+      
+      // Parse JSON files, return markdown as-is
+      if (key.endsWith('.json')) {
+        return JSON.parse(content)
+      } else {
+        return content
+      }
+    }
+    
+    throw new Error("No content found in S3 object")
+  } catch (error) {
+    console.error("S3 get object error:", error)
+    throw error
+  }
+}
+
+export async function getAllJobResults() {
+  try {
+    // List all objects in the bucket to get job structure
+    const objects = await listS3Objects("")
+    
+    // Group objects by job_id and product_id
+    const jobResults: Record<string, Record<string, any[]>> = {}
+    
+    for (const object of objects) {
+      if (!object.Key) continue
+      
+      // Parse path: {job_id}/{product_id}/{worker_file}
+      const pathParts = object.Key.split('/')
+      if (pathParts.length !== 3) continue
+      
+      const [jobId, productId, fileName] = pathParts
+      
+      if (!jobResults[jobId]) {
+        jobResults[jobId] = {}
+      }
+      if (!jobResults[jobId][productId]) {
+        jobResults[jobId][productId] = []
+      }
+      
+      // Get file content
+      try {
+        const content = await getS3Object(object.Key)
+        
+        jobResults[jobId][productId].push({
+          fileName,
+          content,
+          key: object.Key,
+          lastModified: object.LastModified,
+        })
+      } catch (error) {
+        console.error(`Failed to get content for ${object.Key}:`, error)
+      }
+    }
+    
+    return jobResults
+  } catch (error) {
+    console.error("Error getting all job results:", error)
+    throw error
+  }
 }

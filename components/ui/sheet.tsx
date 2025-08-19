@@ -3,7 +3,7 @@
 import * as React from "react"
 import * as SheetPrimitive from "@radix-ui/react-dialog"
 import { cva, type VariantProps } from "class-variance-authority"
-import { X } from "lucide-react"
+import { X, GripVertical } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -51,27 +51,117 @@ const sheetVariants = cva(
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+    VariantProps<typeof sheetVariants> {
+  resizable?: boolean
+  defaultWidth?: number
+  minWidth?: number
+  maxWidth?: number
+}
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <SheetPrimitive.Content
-      ref={ref}
-      className={cn(sheetVariants({ side }), className)}
-      {...props}
-    >
-      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </SheetPrimitive.Close>
-      {children}
-    </SheetPrimitive.Content>
-  </SheetPortal>
-))
+>(({ side = "right", className, children, resizable = false, defaultWidth = 800, minWidth = 400, maxWidth = 1200, ...props }, ref) => {
+  const [width, setWidth] = React.useState(defaultWidth)
+  const [isResizing, setIsResizing] = React.useState(false)
+  const startX = React.useRef(0)
+  const startWidth = React.useRef(0)
+
+  const handleMouseDown = React.useCallback((e: React.MouseEvent) => {
+    if (!resizable) return
+    
+    setIsResizing(true)
+    startX.current = e.clientX
+    startWidth.current = width
+    
+    e.preventDefault()
+  }, [resizable, width])
+
+  const handleMouseMove = React.useCallback((e: MouseEvent) => {
+    if (!isResizing || !resizable) return
+
+    const deltaX = startX.current - e.clientX // Reverse for right-side sheet
+    const newWidth = Math.min(Math.max(startWidth.current + deltaX, minWidth), maxWidth)
+    setWidth(newWidth)
+  }, [isResizing, resizable, minWidth, maxWidth])
+
+  const handleMouseUp = React.useCallback(() => {
+    setIsResizing(false)
+  }, [])
+
+  React.useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp])
+
+  const getSheetStyle = () => {
+    if (!resizable) return {}
+    
+    return {
+      width: `${width}px`,
+      maxWidth: '90vw',
+    }
+  }
+
+  const sheetClasses = cn(
+    sheetVariants({ side }),
+    resizable && "transition-none", // Disable transition when resizable
+    className
+  )
+
+  return (
+    <SheetPortal>
+      <SheetOverlay />
+      <SheetPrimitive.Content
+        ref={ref}
+        className={sheetClasses}
+        style={getSheetStyle()}
+        {...props}
+      >
+        {/* Resize Handle - only show for right side sheets when resizable */}
+        {resizable && side === "right" && (
+          <div
+            className="absolute left-0 top-0 bottom-0 w-1 hover:w-2 bg-border hover:bg-primary/50 cursor-col-resize transition-all duration-200 group"
+            onMouseDown={handleMouseDown}
+          >
+            <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </div>
+        )}
+        
+        {/* Resize Handle - only show for left side sheets when resizable */}
+        {resizable && side === "left" && (
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 hover:w-2 bg-border hover:bg-primary/50 cursor-col-resize transition-all duration-200 group"
+            onMouseDown={handleMouseDown}
+          >
+            <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </div>
+        )}
+
+        <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </SheetPrimitive.Close>
+        {children}
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  )
+})
 SheetContent.displayName = SheetPrimitive.Content.displayName
 
 const SheetHeader = ({
@@ -138,3 +228,5 @@ export {
   SheetTitle,
   SheetDescription,
 }
+
+export type { SheetContentProps }
