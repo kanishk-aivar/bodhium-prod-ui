@@ -54,7 +54,7 @@ export function AppSidebar() {
   const pathname = usePathname()
 
   return (
-    <Sidebar className="z-50 relative">
+    <Sidebar className="fixed left-0 top-0 z-50 h-screen">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--accent))] text-primary-foreground">

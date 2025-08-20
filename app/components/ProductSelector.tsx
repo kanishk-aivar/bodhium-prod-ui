@@ -5,7 +5,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Star, ExternalLink } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Star, ExternalLink, Search } from "lucide-react"
 import type { Product } from "../lib/types"
 
 interface ProductSelectorProps {
@@ -21,6 +22,8 @@ export default function ProductSelector({
   onSelectionChange,
   disabled = false,
 }: ProductSelectorProps) {
+  const [searchTerm, setSearchTerm] = useState("")
+
   const toggleProduct = (productId: number) => {
     if (disabled) return
 
@@ -29,18 +32,6 @@ export default function ProductSelector({
     } else {
       onSelectionChange([...selectedProducts, productId])
     }
-  }
-
-  
-
-  const selectAll = () => {
-    if (disabled) return
-    onSelectionChange(products.map((p) => p.product_id))
-  }
-
-  const selectNone = () => {
-    if (disabled) return
-    onSelectionChange([])
   }
 
   const getProductName = (productData: any) => {
@@ -147,28 +138,83 @@ export default function ProductSelector({
     return productData?.image || productData?.image_url || null
   }
 
+  // Filter products based on search term
+  const filteredProducts = products.filter((product) => {
+    const productName = getProductName(product.product_data).toLowerCase()
+    const brandName = product.brand_name?.toLowerCase() || ""
+    const searchLower = searchTerm.toLowerCase()
+    
+    return productName.includes(searchLower) || brandName.includes(searchLower)
+  })
+
+  const selectAll = () => {
+    if (disabled) return
+    // Select all filtered products
+    const filteredIds = filteredProducts.map((p) => p.product_id)
+    const newSelection = [...Array.from(new Set([...selectedProducts, ...filteredIds]))]
+    onSelectionChange(newSelection)
+  }
+
+  const selectNone = () => {
+    if (disabled) return
+    // Deselect all filtered products
+    const filteredIds = new Set(filteredProducts.map((p) => p.product_id))
+    const newSelection = selectedProducts.filter(id => !filteredIds.has(id))
+    onSelectionChange(newSelection)
+  }
+
   return (
     <div className="space-y-4">
+      {/* Search Bar */}
+      <div className="relative p-1">
+        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+        <Input
+          placeholder="Search products by name or brand..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10 h-11 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50 focus-visible:ring-offset-0"
+        />
+      </div>
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
             {selectedProducts.length} of {products.length} products selected
+            {searchTerm && (
+              <span className="ml-2 text-xs">
+                ({filteredProducts.length} shown)
+              </span>
+            )}
           </span>
         </div>
         {!disabled && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={selectAll}>
-              Select All
+              Select All {searchTerm && `Filtered`}
             </Button>
             <Button size="sm" variant="outline" onClick={selectNone}>
-              Select None
+              Deselect All {searchTerm && `Filtered`}
             </Button>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-hidden p-2">
-        {products.map((product) => {
+      {filteredProducts.length === 0 && searchTerm ? (
+        <div className="text-center py-8">
+          <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">No products found matching "{searchTerm}"</p>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setSearchTerm("")}
+            className="mt-2"
+          >
+            Clear Search
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-hidden p-2">
+          {filteredProducts.map((product) => {
           const isSelected = selectedProducts.includes(product.product_id)
           const productName = getProductName(product.product_data)
           const productCurrentPrice = getProductCurrentPrice(product.product_data)
@@ -270,7 +316,8 @@ export default function ProductSelector({
             </Card>
           )
         })}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

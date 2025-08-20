@@ -405,12 +405,6 @@ export default function ResultsPage() {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchResults}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
       </div>
 
       {/* Job Downloads */}
@@ -594,8 +588,14 @@ export default function ResultsPage() {
 
       {/* Results Table */}
       <Card className="bg-white/60 dark:bg-white/5 backdrop-blur border border-white/60 dark:border-white/10">
-        <CardHeader>
-          <CardTitle className="text-lg">AI Processing Tasks</CardTitle>
+        <CardHeader className="flex flex-row justify-between">
+          <CardTitle className="text-lg">Model Results</CardTitle>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={fetchResults}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {filteredData.length === 0 ? (
