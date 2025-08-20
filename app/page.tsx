@@ -171,10 +171,6 @@ export default function HomePage() {
         return { valid: false, error: "Missing required field: 'queries'" }
       }
 
-      if (!jsonData.options) {
-        return { valid: false, error: "Missing required field: 'options'" }
-      }
-
       // Validate queries array
       if (!Array.isArray(jsonData.queries)) {
         return { valid: false, error: "'queries' must be an array" }
@@ -192,38 +188,6 @@ export default function HomePage() {
         if (jsonData.queries[i].trim() === '') {
           return { valid: false, error: `Query at index ${i} cannot be empty` }
         }
-      }
-
-      // Validate options object
-      if (typeof jsonData.options !== 'object') {
-        return { valid: false, error: "'options' must be an object" }
-      }
-
-      if (!jsonData.options.mode) {
-        return { valid: false, error: "Missing required field: 'options.mode'" }
-      }
-
-      if (typeof jsonData.options.mode !== 'string') {
-        return { valid: false, error: "'options.mode' must be a string" }
-      }
-
-      if (!jsonData.options.priority) {
-        return { valid: false, error: "Missing required field: 'options.priority'" }
-      }
-
-      if (typeof jsonData.options.priority !== 'string') {
-        return { valid: false, error: "'options.priority' must be a string" }
-      }
-
-      // Validate allowed values
-      const allowedModes = ['Adhoc_trigger']
-      if (!allowedModes.includes(jsonData.options.mode)) {
-        return { valid: false, error: `'options.mode' must be one of: ${allowedModes.join(', ')}` }
-      }
-
-      const allowedPriorities = ['high', 'medium', 'low']
-      if (!allowedPriorities.includes(jsonData.options.priority)) {
-        return { valid: false, error: `'options.priority' must be one of: ${allowedPriorities.join(', ')}` }
       }
 
       return { valid: true }
@@ -526,18 +490,12 @@ export default function HomePage() {
     "What are the best laptops under $1000 in USA?",
     "What are the best hair bands for women in USA?",
     "What are the best hair ties for women in USA?"
-  ],
-  "options": {
-    "mode": "Adhoc_trigger",
-    "priority": "high"
-  }
+  ]
 }`}
                         </pre>
                         <div className="mt-2 text-xs space-y-1">
                           <p><strong>Required fields:</strong></p>
                           <p>• queries: Array of non-empty strings</p>
-                          <p>• options.mode: Must be "Adhoc_trigger"</p>
-                          <p>• options.priority: "high", "medium", or "low"</p>
                         </div>
                       </div>
                     </details>

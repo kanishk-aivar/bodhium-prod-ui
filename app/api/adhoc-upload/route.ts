@@ -20,9 +20,6 @@ function validateJsonSchema(jsonData: any): { valid: boolean; error?: string } {
       return { valid: false, error: "Missing required field: 'queries'" }
     }
 
-    if (!jsonData.options) {
-      return { valid: false, error: "Missing required field: 'options'" }
-    }
 
     // Validate queries array
     if (!Array.isArray(jsonData.queries)) {
@@ -41,38 +38,6 @@ function validateJsonSchema(jsonData: any): { valid: boolean; error?: string } {
       if (jsonData.queries[i].trim() === '') {
         return { valid: false, error: `Query at index ${i} cannot be empty` }
       }
-    }
-
-    // Validate options object
-    if (typeof jsonData.options !== 'object') {
-      return { valid: false, error: "'options' must be an object" }
-    }
-
-    if (!jsonData.options.mode) {
-      return { valid: false, error: "Missing required field: 'options.mode'" }
-    }
-
-    if (typeof jsonData.options.mode !== 'string') {
-      return { valid: false, error: "'options.mode' must be a string" }
-    }
-
-    if (!jsonData.options.priority) {
-      return { valid: false, error: "Missing required field: 'options.priority'" }
-    }
-
-    if (typeof jsonData.options.priority !== 'string') {
-      return { valid: false, error: "'options.priority' must be a string" }
-    }
-
-    // Validate allowed values
-    const allowedModes = ['Adhoc_trigger']
-    if (!allowedModes.includes(jsonData.options.mode)) {
-      return { valid: false, error: `'options.mode' must be one of: ${allowedModes.join(', ')}` }
-    }
-
-    const allowedPriorities = ['high', 'medium', 'low']
-    if (!allowedPriorities.includes(jsonData.options.priority)) {
-      return { valid: false, error: `'options.priority' must be one of: ${allowedPriorities.join(', ')}` }
     }
 
     return { valid: true }
