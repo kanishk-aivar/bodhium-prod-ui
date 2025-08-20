@@ -236,7 +236,30 @@ export default function ResultsPage() {
   const uniqueBrands = Array.from(new Set(tableData.map(row => row.brand))).sort()
   const uniqueStatuses = Array.from(new Set(tableData.map(row => row.status))).sort()
   const uniqueModels = Array.from(new Set(tableData.map(row => row.llmModel))).sort()
-  const uniqueJobIds = Array.from(new Set(tableData.map(row => row.jobId))).sort()
+  
+  // Get unique job IDs with their creation dates based on selected brand
+  const getUniqueJobIdsWithDates = () => {
+    const filteredData = brandFilter === "all" 
+      ? tableData
+      : tableData.filter(row => row.brand === brandFilter)
+    
+    // Group by job ID and get the earliest creation date for each
+    const jobIdMap = new Map<string, string>()
+    
+    filteredData.forEach(row => {
+      const existingDate = jobIdMap.get(row.jobId)
+      if (!existingDate || new Date(row.createdAt) < new Date(existingDate)) {
+        jobIdMap.set(row.jobId, row.createdAt)
+      }
+    })
+    
+    // Convert to array and sort by job ID
+    return Array.from(jobIdMap.entries())
+      .map(([jobId, createdAt]) => ({ jobId, createdAt }))
+      .sort((a, b) => a.jobId.localeCompare(b.jobId))
+  }
+
+  const uniqueJobIdsWithDates = getUniqueJobIdsWithDates()
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -247,6 +270,13 @@ export default function ResultsPage() {
   useEffect(() => {
     setSelectedJobId("")
   }, [selectedBrand])
+
+  // Reset job_id filter when brand filter changes
+  useEffect(() => {
+    if (brandFilter !== "all") {
+      setJobIdFilter("all")
+    }
+  }, [brandFilter])
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -459,7 +489,7 @@ export default function ResultsPage() {
                     <option value="">Select a job</option>
                     {getJobsWithS3DataForBrand().map((job) => (
                       <option key={job.job_id} value={job.job_id}>
-                        {job.job_id} ({new Date(job.created_at).toLocaleDateString()})
+                        {job.job_id} ({new Date(job.created_at).toLocaleDateString()} {new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
                       </option>
                     ))}
                   </select>
@@ -547,6 +577,22 @@ export default function ResultsPage() {
                     <option key={brand} value={brand}>{brand}</option>
                   ))}
                 </select>
+
+                <select
+                  value={jobIdFilter}
+                  onChange={(e) => setJobIdFilter(e.target.value)}
+                  disabled={brandFilter === "all"}
+                  className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="all">
+                    {brandFilter === "all" ? "Select Brand First" : "All Job IDs"}
+                  </option>
+                  {uniqueJobIdsWithDates.map(({ jobId, createdAt }) => (
+                    <option key={jobId} value={jobId}>
+                      {jobId} ({new Date(createdAt).toLocaleDateString()} {new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                    </option>
+                  ))}
+                </select>
                 
                 <select
                   value={statusFilter}
@@ -570,16 +616,7 @@ export default function ResultsPage() {
                   ))}
                 </select>
 
-                <select
-                  value={jobIdFilter}
-                  onChange={(e) => setJobIdFilter(e.target.value)}
-                  className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
-                >
-                  <option value="all">All Job IDs</option>
-                  {uniqueJobIds.map((jobId) => (
-                    <option key={jobId} value={jobId}>{jobId}</option>
-                  ))}
-                </select>
+                
               </div>
             </div>
           </div>

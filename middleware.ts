@@ -6,8 +6,13 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const { pathname } = url;
   
-  // Exclude authentication and login routes
-  if (pathname.startsWith('/api/auth') || pathname.startsWith('/login')) {
+  // Exclude authentication, login routes, and health check endpoints
+  if (pathname.startsWith('/api/auth') || 
+      pathname.startsWith('/login') ||
+      pathname === '/health' ||
+      pathname === '/api/health' ||
+      pathname.startsWith('/_next') ||
+      pathname === '/favicon.ico') {
     return NextResponse.next();
   }
 
