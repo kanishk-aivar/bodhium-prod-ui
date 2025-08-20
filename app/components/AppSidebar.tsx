@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, Package, MessageSquare, BarChart, FileSpreadsheet } from "lucide-react"
+import { Home, Package, MessageSquare, BarChart, FileSpreadsheet, LogOut, User } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -13,8 +13,10 @@ import {
   SidebarMenuItem,
   SidebarHeader,
 } from "@/components/ui/sidebar"
+import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useSession, signOut } from "next-auth/react"
 import ThemeToggle from "./ThemeToggle"
 
 const items = [
@@ -52,6 +54,11 @@ const items = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const { data: session, status } = useSession()
+
+  const handleLogout = async () => {
+    await signOut({ callbackUrl: "/login" })
+  }
 
   return (
     <Sidebar className="fixed left-0 top-0 z-50 h-screen">
@@ -95,8 +102,29 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="mt-auto p-2">
-        {/* Footer content if needed */}
+      <SidebarFooter className="mt-auto p-4 border-t">
+        {session?.user && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--accent))] text-primary-foreground">
+                <User className="h-4 w-4" />
+              </div>
+              <div className="flex flex-col overflow-hidden">
+                <span className="font-medium truncate">{session.user.name || session.user.email}</span>
+                <span className="text-xs text-muted-foreground truncate">{session.user.email}</span>
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleLogout}
+              className="w-full justify-start gap-2"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </Button>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   )
