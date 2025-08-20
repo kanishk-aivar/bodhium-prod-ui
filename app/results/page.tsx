@@ -48,7 +48,7 @@ export default function ResultsPage() {
     const rows: TableRow[] = results.tasks.map((task) => ({
       id: task.task_id,
       brand: task.brand_name || "Unknown Brand",
-      productName: task.product_name || `Product ${task.product_id}`,
+      productName: task.product_name || task.product_id?.toString() || "Unknown Product",
       query: task.query_text || "No query text",
       status: task.status || "unknown",
       llmModel: task.llm_model_name || "Unknown Model",

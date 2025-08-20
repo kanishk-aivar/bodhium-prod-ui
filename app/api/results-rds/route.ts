@@ -83,7 +83,7 @@ export async function GET() {
         created_at: record.created_at,
         completed_at: record.completed_at,
         product_id: record.product_id,
-        product_name: finalProductName || `Product ${record.product_id}`,
+        product_name: finalProductName || record.product_id?.toString() || "Unknown Product",
         query_text: record.query_text,
         query_type: record.query_type,
         brand_name: finalBrandName || "Unknown Brand",
