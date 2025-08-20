@@ -7,13 +7,14 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Search, Loader2, RefreshCw, Eye, ChevronLeft, ChevronRight, Filter, Download } from "lucide-react"
+import { Search, Loader2, RefreshCw, Eye, ChevronLeft, ChevronRight, Filter, Download, CheckCircle, XCircle, Clock, ArrowRight } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { TaskResponseContent } from "@/components/ui/task-response-content"
-import type { RDSResultsResponse, RDSTaskResult } from "../lib/types"
+import type { RDSResultsResponse, RDSTaskResult, ScrapeJob } from "../lib/types"
 
 interface TableRow {
   id: string
+  jobId: string
   brand: string
   productName: string
   query: string
@@ -31,9 +32,18 @@ export default function ResultsPage() {
   const [brandFilter, setBrandFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [modelFilter, setModelFilter] = useState<string>("all")
+  const [jobIdFilter, setJobIdFilter] = useState<string>("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedTask, setSelectedTask] = useState<RDSTaskResult | null>(null)
+  
+  // Job download state
+  const [jobs, setJobs] = useState<ScrapeJob[]>([])
+  const [jobsWithS3Data, setJobsWithS3Data] = useState<Set<string>>(new Set())
+  const [downloadingJobs, setDownloadingJobs] = useState<Set<string>>(new Set())
+  const [jobsLoading, setJobsLoading] = useState(false)
+  const [selectedBrand, setSelectedBrand] = useState<string>("")
+  const [selectedJobId, setSelectedJobId] = useState<string>("")
   
   const ROWS_PER_PAGE = 30
 
@@ -41,12 +51,14 @@ export default function ResultsPage() {
 
   useEffect(() => {
     fetchResults()
+    fetchJobs()
   }, [])
 
   useEffect(() => {
     // Transform tasks data into table rows
     const rows: TableRow[] = results.tasks.map((task) => ({
       id: task.task_id,
+      jobId: task.job_id || "Unknown Job",
       brand: task.brand_name || "Unknown Brand",
       productName: task.product_name || task.product_id?.toString() || "Unknown Product",
       query: task.query_text || "No query text",
@@ -76,20 +88,142 @@ export default function ResultsPage() {
     }
   }
 
+  const fetchJobs = async () => {
+    try {
+      setJobsLoading(true)
+      const response = await fetch("/api/jobs")
+      const data = await response.json()
+
+      if (Array.isArray(data)) {
+        setJobs(data)
+        // Check S3 data for all jobs
+        checkJobsS3Data(data)
+      } else {
+        console.error("Jobs API returned non-array:", data)
+        setJobs([])
+        toast({
+          title: "Warning",
+          description: "Failed to load jobs for download",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error fetching jobs:", error)
+      setJobs([])
+      toast({
+        title: "Error",
+        description: "Failed to fetch jobs for download",
+        variant: "destructive",
+      })
+    } finally {
+      setJobsLoading(false)
+    }
+  }
+
+  // Check which jobs have S3 data available
+  const checkJobsS3Data = async (jobsList: ScrapeJob[]) => {
+    const newJobsWithS3Data = new Set<string>()
+    
+    // Check each job in parallel
+    const promises = jobsList.map(async (job) => {
+      try {
+        const response = await fetch(`/api/check-job-s3/${job.job_id}`)
+        const data = await response.json()
+        
+        if (data.hasS3Data) {
+          newJobsWithS3Data.add(job.job_id)
+        }
+      } catch (error) {
+        console.error(`Failed to check S3 data for job ${job.job_id}:`, error)
+      }
+    })
+    
+    await Promise.all(promises)
+    setJobsWithS3Data(newJobsWithS3Data)
+  }
+
+  // Handle job download
+  const downloadJobData = async (jobId: string) => {
+    try {
+      setDownloadingJobs(prev => new Set([...Array.from(prev), jobId]))
+      
+      const response = await fetch(`/api/download-job/${jobId}`)
+      
+      if (response.ok) {
+        // Create blob from response
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        
+        // Create temporary download link
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${jobId}_data.zip`
+        document.body.appendChild(a)
+        a.click()
+        
+        // Cleanup
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        
+        toast({
+          title: "Success",
+          description: "Job data downloaded successfully",
+        })
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to download job data")
+      }
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : "Failed to download job data",
+        variant: "destructive",
+      })
+    } finally {
+      setDownloadingJobs(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(jobId)
+        return newSet
+      })
+    }
+  }
+
+  // Helper functions for job dropdowns
+  const getUniqueBrands = () => {
+    return Array.from(new Set(jobs.map(job => job.brand_name || "Unknown Brand"))).sort()
+  }
+
+  const getFilteredJobs = () => {
+    if (!selectedBrand) return []
+    return jobs.filter(job => (job.brand_name || "Unknown Brand") === selectedBrand)
+  }
+
+  const getJobsWithS3DataForBrand = () => {
+    return getFilteredJobs().filter(job => jobsWithS3Data.has(job.job_id))
+  }
+
+  const handleDownloadSelected = () => {
+    if (selectedJobId) {
+      downloadJobData(selectedJobId)
+    }
+  }
+
   const filteredData = tableData.filter((row) => {
     const searchLower = searchTerm.toLowerCase()
     const matchesSearch = (
       row.brand.toLowerCase().includes(searchLower) ||
       row.productName.toLowerCase().includes(searchLower) ||
       row.query.toLowerCase().includes(searchLower) ||
-      row.llmModel.toLowerCase().includes(searchLower)
+      row.llmModel.toLowerCase().includes(searchLower) ||
+      row.jobId.toLowerCase().includes(searchLower)
     )
     
     const matchesBrand = brandFilter === "all" || row.brand === brandFilter
     const matchesStatus = statusFilter === "all" || row.status === statusFilter
     const matchesModel = modelFilter === "all" || row.llmModel === modelFilter
+    const matchesJobId = jobIdFilter === "all" || row.jobId === jobIdFilter
     
-    return matchesSearch && matchesBrand && matchesStatus && matchesModel
+    return matchesSearch && matchesBrand && matchesStatus && matchesModel && matchesJobId
   })
 
   // Pagination logic
@@ -102,11 +236,17 @@ export default function ResultsPage() {
   const uniqueBrands = Array.from(new Set(tableData.map(row => row.brand))).sort()
   const uniqueStatuses = Array.from(new Set(tableData.map(row => row.status))).sort()
   const uniqueModels = Array.from(new Set(tableData.map(row => row.llmModel))).sort()
+  const uniqueJobIds = Array.from(new Set(tableData.map(row => row.jobId))).sort()
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, brandFilter, statusFilter, modelFilter])
+  }, [searchTerm, brandFilter, statusFilter, modelFilter, jobIdFilter])
+
+  // Reset job selection when brand changes
+  useEffect(() => {
+    setSelectedJobId("")
+  }, [selectedBrand])
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -133,6 +273,41 @@ export default function ResultsPage() {
       return "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
     }
     return "bg-gray-500/15 text-gray-700 dark:text-gray-300 border border-gray-500/20"
+  }
+
+  // Helper functions for job status icons and colors
+  const getJobStatusIcon = (status: string) => {
+    switch (status) {
+      case "JOB_SUCCESS":
+      case "completed":
+        return <CheckCircle className="h-4 w-4 text-green-500" />
+      case "JOB_FAILED":
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-500" />
+      case "JOB_RUNNING":
+      case "processing":
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+      default:
+        return <Clock className="h-4 w-4 text-yellow-500" />
+    }
+  }
+
+  const getJobStatusColor = (status: string) => {
+    switch (status) {
+      case "JOB_SUCCESS":
+      case "completed":
+        return "bg-green-100 text-green-800"
+      case "JOB_FAILED":
+      case "failed":
+        return "bg-red-100 text-red-800"
+      case "JOB_RUNNING":
+      case "processing":
+        return "bg-blue-100 text-blue-800"
+      case "llm_generated":
+        return "bg-purple-100 text-purple-800"
+      default:
+        return "bg-yellow-100 text-yellow-800"
+    }
   }
 
   const downloadTaskResult = async (task: RDSTaskResult) => {
@@ -238,6 +413,118 @@ export default function ResultsPage() {
         </div>
       </div>
 
+      {/* Job Downloads */}
+      <Card className="mb-6 bg-white/60 dark:bg-white/5 backdrop-blur border border-white/60 dark:border-white/10">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Job Data Downloads</CardTitle>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={fetchJobs} disabled={jobsLoading}>
+                {jobsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {jobsLoading ? (
+            <div className="text-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Loading jobs...</p>
+            </div>
+          ) : jobs.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">No jobs found</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Brand Selection */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Brand</label>
+                  <select
+                    value={selectedBrand}
+                    onChange={(e) => setSelectedBrand(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select a brand</option>
+                    {getUniqueBrands().map((brand) => (
+                      <option key={brand} value={brand}>
+                        {brand}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Job ID Selection */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Job ID</label>
+                  <select
+                    value={selectedJobId}
+                    onChange={(e) => setSelectedJobId(e.target.value)}
+                    disabled={!selectedBrand}
+                    className="w-full px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">Select a job</option>
+                    {getJobsWithS3DataForBrand().map((job) => (
+                      <option key={job.job_id} value={job.job_id}>
+                        {job.job_id} ({new Date(job.created_at).toLocaleDateString()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Download Button */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Action</label>
+                  <Button
+                    onClick={handleDownloadSelected}
+                    disabled={!selectedJobId || downloadingJobs.has(selectedJobId)}
+                    className="w-full h-10"
+                  >
+                    {downloadingJobs.has(selectedJobId) ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download ZIP
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Info Messages */}
+              <div className="space-y-2">
+                {selectedBrand && getFilteredJobs().length === 0 && (
+                  <div className="text-center py-2 px-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      No jobs found for "{selectedBrand}"
+                    </p>
+                  </div>
+                )}
+                
+                {selectedBrand && getFilteredJobs().length > 0 && getJobsWithS3DataForBrand().length === 0 && (
+                  <div className="text-center py-2 px-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      No downloadable S3 data available for "{selectedBrand}" jobs
+                    </p>
+                  </div>
+                )}
+
+                {jobsWithS3Data.size === 0 && (
+                  <div className="text-center py-2 px-4 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      No jobs currently have downloadable S3 data available
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Search and Filters */}
       <Card className="mb-6 bg-white/60 dark:bg-white/5 backdrop-blur border border-white/60 dark:border-white/10">
         <CardContent className="p-4">
@@ -288,6 +575,17 @@ export default function ResultsPage() {
                     <option key={model} value={model}>{model}</option>
                   ))}
                 </select>
+
+                <select
+                  value={jobIdFilter}
+                  onChange={(e) => setJobIdFilter(e.target.value)}
+                  className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
+                >
+                  <option value="all">All Job IDs</option>
+                  {uniqueJobIds.map((jobId) => (
+                    <option key={jobId} value={jobId}>{jobId}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -324,6 +622,7 @@ export default function ResultsPage() {
                       <TableHead className="w-[120px]">AI Model</TableHead>
                       <TableHead className="w-[120px]">Created</TableHead>
                       <TableHead className="w-[100px]">Details</TableHead>
+                      <TableHead className="w-[100px]">Download</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -374,6 +673,20 @@ export default function ResultsPage() {
                             <Eye className="h-4 w-4 mr-1" />
                             View
                           </Button>
+                        </TableCell>
+                        <TableCell>
+                          {row.task.s3_output_path ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => downloadTaskResult(row.task)}
+                              title="Download task result"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">No data</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
