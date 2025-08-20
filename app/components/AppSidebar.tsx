@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, Package, MessageSquare, BarChart } from "lucide-react"
+import { Home, Package, MessageSquare, BarChart, FileSpreadsheet } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -41,6 +41,12 @@ const items = [
     url: "/results",
     icon: BarChart,
     description: "View Analysis"
+  },
+  {
+    title: "Ad-hoc Jobs",
+    url: "/adhoc",
+    icon: FileSpreadsheet,
+    description: "Download CSV Results"
   },
 ]
 
