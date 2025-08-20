@@ -3,7 +3,6 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import type { Query } from "../lib/types"
 
 interface QuerySelectorProps {
@@ -39,25 +38,17 @@ export default function QuerySelector({
     onSelectionChange([])
   }
 
-  const getQueryTypeColor = (type: string) => {
-    switch (type) {
-      case "product":
-        return "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
-      case "market":
-        return "bg-[hsl(var(--primary))]/20 text-[hsl(var(--primary))]"
-      case "custom":
-        return "bg-secondary text-foreground/80"
-      default:
-        return "bg-muted text-foreground/80"
-    }
-  }
+  // Filter selectedQueries to only count those that exist in this component's queries
+  const relevantSelectedQueries = selectedQueries.filter(id => 
+    queries.some(q => q.query_id === id)
+  )
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
-            {selectedQueries.length} of {queries.length} queries selected
+            {relevantSelectedQueries.length} of {queries.length} queries selected
           </span>
         </div>
         {!disabled && (
@@ -72,7 +63,7 @@ export default function QuerySelector({
         )}
       </div>
 
-      <div className="grid gap-3 max-h-96 overflow-y-auto pr-1">
+      <div className="grid gap-3 max-h-96 overflow-y-auto p-3">
         {queries.map((query) => {
           const isSelected = selectedQueries.includes(query.query_id)
 
@@ -95,12 +86,7 @@ export default function QuerySelector({
                   />
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm leading-relaxed">{query.query_text}</p>
-                      <Badge className={getQueryTypeColor(query.query_type || "unknown")}>
-                        {query.query_type || "unknown"}
-                      </Badge>
-                    </div>
+                    <p className="text-sm leading-relaxed">{query.query_text}</p>
                   </div>
                 </div>
               </CardContent>

@@ -114,3 +114,17 @@ export interface RDSResultsResponse {
 export interface TaskContentResponse extends RDSTaskResult {
   s3_content: any
 }
+
+// New Perplexity S3 response format
+export interface PerplexityS3Response {
+  job_id: string
+  product_id: string
+  query_id: number
+  query: string
+  timestamp: string
+  model: string
+  content: string
+  citations: string[]
+  related_questions: string[]
+  status: string
+}

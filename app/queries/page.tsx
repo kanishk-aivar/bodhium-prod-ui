@@ -22,11 +22,15 @@ export default function QueriesPage() {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([])
   const [queries, setQueries] = useState<Query[]>([])
   const [selectedQueries, setSelectedQueries] = useState<number[]>([])
+  const [selectedCustomQueries, setSelectedCustomQueries] = useState<number[]>([])
   const [newQueries, setNewQueries] = useState<string[]>([])
   const [customQuery, setCustomQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [isGeneratingQueries, setIsGeneratingQueries] = useState(false)
+  const [isProcessingQueries, setIsProcessingQueries] = useState(false)
+  const [isSubmittingProducts, setIsSubmittingProducts] = useState(false)
+  const [isRefreshingQueries, setIsRefreshingQueries] = useState(false)
   const [queriesExist, setQueriesExist] = useState(false)
 
   const { toast } = useToast()
@@ -124,6 +128,7 @@ export default function QueriesPage() {
     setSelectedProducts([])
     setQueries([])
     setSelectedQueries([])
+    setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
     
@@ -151,6 +156,7 @@ export default function QueriesPage() {
     setSelectedProducts([])
     setQueries([])
     setSelectedQueries([])
+    setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
     fetchProducts(job.job_id)
@@ -165,6 +171,7 @@ export default function QueriesPage() {
     // Clear queries when products change
     setQueries([])
     setSelectedQueries([])
+    setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
   }
@@ -188,12 +195,17 @@ export default function QueriesPage() {
       return
     }
 
-    // Store in localStorage for persistence
-    localStorage.setItem('selectedBrand', selectedBrand)
-    localStorage.setItem('selectedJobId', selectedJob.job_id)
-    localStorage.setItem('selectedProducts', JSON.stringify(selectedProducts))
+    setIsSubmittingProducts(true)
+    try {
+      // Store in localStorage for persistence
+      localStorage.setItem('selectedBrand', selectedBrand)
+      localStorage.setItem('selectedJobId', selectedJob.job_id)
+      localStorage.setItem('selectedProducts', JSON.stringify(selectedProducts))
 
-    await checkExistingQueries(selectedJob.job_id, selectedProducts)
+      await checkExistingQueries(selectedJob.job_id, selectedProducts)
+    } finally {
+      setIsSubmittingProducts(false)
+    }
   }
 
   const checkExistingQueries = async (jobId: string, productIds: number[]) => {
@@ -272,10 +284,15 @@ export default function QueriesPage() {
   }
 
   const processQueries = async () => {
-    if (selectedQueries.length === 0 && newQueries.length === 0) {
+    const selectedCustomQueriesText = selectedCustomQueries.map(id => {
+      const customQuery = customQueriesAsObjects.find(q => q.query_id === id)
+      return customQuery?.query_text || ''
+    }).filter(text => text !== '')
+
+    if (selectedQueries.length === 0 && selectedCustomQueriesText.length === 0) {
       toast({
         title: "Error",
-        description: "Please select at least one existing query or add a custom query",
+        description: "Please select at least one existing query or custom query",
         variant: "destructive",
       })
       return
@@ -283,6 +300,7 @@ export default function QueriesPage() {
 
     if (!selectedJob) return
 
+    setIsProcessingQueries(true)
     try {
       const response = await fetch("/api/process-queries", {
         method: "POST",
@@ -290,7 +308,7 @@ export default function QueriesPage() {
         body: JSON.stringify({
           job_id: selectedJob.job_id,
           existing_query_ids: selectedQueries.length > 0 ? selectedQueries.map(id => Number(id)) : undefined,
-          new_queries: newQueries.length > 0 ? newQueries : undefined,
+          new_queries: selectedCustomQueriesText.length > 0 ? selectedCustomQueriesText : undefined,
           selected_products: selectedProducts.map(id => Number(id)),
         }),
       })
@@ -311,6 +329,8 @@ export default function QueriesPage() {
         description: "Failed to process queries",
         variant: "destructive",
       })
+    } finally {
+      setIsProcessingQueries(false)
     }
   }
 
@@ -324,6 +344,24 @@ export default function QueriesPage() {
     },
     {} as Record<string, Query[]>,
   )
+
+  // Helper function to format query type titles
+  const formatQueryTypeTitle = (type: string) => {
+    return type
+      .split('_') // Split by underscore
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize first letter of each word
+      .join(' ') // Join with spaces
+      + ' Queries' // Add "Queries" suffix
+  }
+
+  // Convert custom queries to Query objects for consistent handling
+  const customQueriesAsObjects: Query[] = newQueries.map((queryText, index) => ({
+    query_id: -(index + 1), // Use negative IDs to avoid conflicts with existing queries
+    product_id: null,
+    query_text: queryText,
+    query_type: 'custom',
+    is_active: true,
+  }))
 
   if (isLoading) {
     return (
@@ -359,8 +397,12 @@ export default function QueriesPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Select Brand</CardTitle>
-                  <Button size="sm" variant="outline" onClick={fetchJobs}>
-                    <RefreshCw className="h-4 w-4" />
+                  <Button size="sm" variant="outline" onClick={fetchJobs} disabled={isLoading}>
+                    {isLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </CardHeader>
@@ -426,8 +468,17 @@ export default function QueriesPage() {
                       </div>
                       {selectedProducts.length > 0 && (
                         <div className="mt-4 flex justify-end">
-                          <Button onClick={submitProductSelection}>
-                            Continue to Queries <ArrowRight className="ml-2 h-4 w-4" />
+                          <Button onClick={submitProductSelection} disabled={isSubmittingProducts}>
+                            {isSubmittingProducts ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Loading Queries...
+                              </>
+                            ) : (
+                              <>
+                                Continue to Queries <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            )}
                           </Button>
                         </div>
                       )}
@@ -451,10 +502,23 @@ export default function QueriesPage() {
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      onClick={() => selectedJob && checkExistingQueries(selectedJob.job_id, selectedProducts)}
+                      onClick={async () => {
+                        if (!selectedJob) return
+                        setIsRefreshingQueries(true)
+                        try {
+                          await checkExistingQueries(selectedJob.job_id, selectedProducts)
+                        } finally {
+                          setIsRefreshingQueries(false)
+                        }
+                      }}
+                      disabled={isRefreshingQueries}
                       title="Refresh queries from database"
                     >
-                      <RefreshCw className="h-4 w-4" />
+                      {isRefreshingQueries ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </CardHeader>
@@ -472,12 +536,8 @@ export default function QueriesPage() {
                       {/* Group queries by type */}
                       {Object.entries(groupedQueries).map(([type, typeQueries]) => (
                         <div key={type} className="mb-6">
-                          <h3 className="text-lg font-medium mb-3 capitalize">
-                            {type === "product"
-                              ? "Product-Based Queries"
-                              : type === "market"
-                                ? "Market-Based Queries"
-                                : `${type} Queries`}
+                          <h3 className="text-lg font-medium mb-3">
+                            {formatQueryTypeTitle(type)}
                           </h3>
                           <QuerySelector
                             queries={typeQueries}
@@ -488,27 +548,28 @@ export default function QueriesPage() {
                         </div>
                       ))}
 
-                      {/* New/Custom Queries Section */}
-                      {newQueries.length > 0 && (
+                      {/* Custom Queries Section */}
+                      {customQueriesAsObjects.length > 0 && (
                         <div className="mb-6">
                           <h3 className="text-lg font-medium mb-3">Custom Queries</h3>
-                          <div className="space-y-2">
-                            {newQueries.map((query, index) => (
-                              <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200">{query}</p>
-                                  <p className="text-xs text-blue-600 dark:text-blue-400">Custom Query</p>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setNewQueries(prev => prev.filter((_, i) => i !== index))}
-                                  className="text-red-600 hover:text-red-800 hover:bg-red-100 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
-                                >
-                                  Remove
-                                </Button>
-                              </div>
-                            ))}
+                          <QuerySelector
+                            queries={customQueriesAsObjects}
+                            selectedQueries={selectedCustomQueries}
+                            onSelectionChange={setSelectedCustomQueries}
+                            disabled={false}
+                          />
+                          <div className="mt-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setNewQueries([])
+                                setSelectedCustomQueries([])
+                              }}
+                              className="text-red-600 hover:text-red-800 hover:bg-red-100 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
+                            >
+                              Clear All Custom
+                            </Button>
                           </div>
                         </div>
                       )}
@@ -534,8 +595,17 @@ export default function QueriesPage() {
                               Regenerate Queries
                             </Button>
                           </div>
-                          <Button onClick={processQueries} disabled={selectedQueries.length === 0 && newQueries.length === 0}>
-                            Process Queries ({selectedQueries.length + newQueries.length}) <ArrowRight className="ml-2 h-4 w-4" />
+                          <Button onClick={processQueries} disabled={(selectedQueries.length === 0 && selectedCustomQueries.length === 0) || isProcessingQueries}>
+                            {isProcessingQueries ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                Process Queries ({selectedQueries.length + selectedCustomQueries.length}) <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            )}
                           </Button>
                         </div>
                       </div>

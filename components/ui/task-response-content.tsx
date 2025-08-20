@@ -126,18 +126,29 @@ export function TaskResponseContent({ task, onDownload }: TaskResponseContentPro
 
     const content = contentData.s3_content
 
+    // Check if it's the new flat Perplexity format
+    const isNewFormat = content && typeof content === 'object' && 
+                       'content' in content && 'citations' in content && 'model' in content
+
     return (
       <div className="space-y-4">
         <div>
           <h4 className="font-semibold text-sm mb-2">Response Content</h4>
           <div className="bg-muted/50 rounded-lg p-4">
-            {typeof content === 'string' ? (
+            {isNewFormat ? (
+              // New flat format (Perplexity, etc.)
+              <Markdown content={content.content} />
+            ) : typeof content === 'string' ? (
+              // String content
               <Markdown content={content} />
             ) : content.formatted_markdown ? (
+              // Legacy format with formatted_markdown
               <Markdown content={content.formatted_markdown} />
             ) : content.content ? (
+              // Legacy format with content field
               <Markdown content={content.content} />
             ) : (
+              // Fallback to raw JSON
               <div>
                 <p className="text-sm text-muted-foreground mb-2">Raw S3 Content:</p>
                 <pre className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded border overflow-x-auto">
@@ -148,8 +159,29 @@ export function TaskResponseContent({ task, onDownload }: TaskResponseContentPro
           </div>
         </div>
 
-        {/* Links section */}
-        {content && typeof content === 'object' && content.links && content.links.length > 0 && (
+        {/* Citations section (new format) */}
+        {isNewFormat && content.citations && content.citations.length > 0 && (
+          <div>
+            <h4 className="font-semibold text-sm mb-2">Citations</h4>
+            <div className="space-y-2">
+              {content.citations.map((citation: string, index: number) => (
+                <a
+                  key={index}
+                  href={citation}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 hover:underline"
+                >
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{citation}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Links section (legacy format) */}
+        {!isNewFormat && content && typeof content === 'object' && content.links && content.links.length > 0 && (
           <div>
             <h4 className="font-semibold text-sm mb-2">Related Links</h4>
             <div className="space-y-2">
@@ -169,7 +201,7 @@ export function TaskResponseContent({ task, onDownload }: TaskResponseContentPro
           </div>
         )}
 
-        {/* Related questions section */}
+        {/* Related questions section (both formats) */}
         {content && typeof content === 'object' && content.related_questions && content.related_questions.length > 0 && (
           <div>
             <h4 className="font-semibold text-sm mb-2">Related Questions</h4>
@@ -181,6 +213,27 @@ export function TaskResponseContent({ task, onDownload }: TaskResponseContentPro
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Additional metadata for new format */}
+        {isNewFormat && (
+          <div>
+            <h4 className="font-semibold text-sm mb-2">Query Details</h4>
+            <div className="bg-muted/30 rounded-lg p-3 space-y-1">
+              {content.query && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Query:</span>
+                  <p className="mt-1 text-foreground">{content.query}</p>
+                </div>
+              )}
+              {content.timestamp && (
+                <div className="flex justify-between text-xs pt-2 border-t border-border">
+                  <span className="text-muted-foreground">Response Generated:</span>
+                  <span className="font-mono">{new Date(content.timestamp).toLocaleString()}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
