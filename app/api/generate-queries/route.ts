@@ -1,5 +1,11 @@
 import type { NextRequest } from "next/server"
-import { invokeLambda, LAMBDA_ARNS, executeQuery, createApiResponse, createErrorResponse } from "../../lib/api"
+import { createErrorResponse } from "../../lib/api"
+import { BatchClient, SubmitJobCommand } from "@aws-sdk/client-batch"
+
+// Initialize AWS Batch client
+const batchClient = new BatchClient({
+  region: process.env.AWS_REGION || "us-east-1",
+})
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,46 +16,84 @@ export async function POST(request: NextRequest) {
       return createErrorResponse("Job ID and product IDs are required", 400)
     }
 
-    // Get product details
-    const productRecords = await executeQuery(
-      `
-      SELECT product_id, product_data, brand_name
-      FROM products
-      WHERE product_id = ANY($1)
-    `,
-      [product_ids],
-    )
+    // Generate a unique JOB_ID for AWS Batch
+    const batchJobId = `query-gen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
-    const products = productRecords.map((record) => {
-      let productData = record.product_data
-      if (typeof productData === "string") {
-        try {
-          productData = JSON.parse(productData)
-        } catch {
-          productData = {}
-        }
-      }
 
-      return {
-        product_id: record.product_id, // Include product_id as requested
-        name: productData?.productname || productData?.name || productData?.title || "Unknown Product", // Fix: Use productname
-        brand: record.brand_name || "Unknown Brand",
-      }
-    })
 
-    // Invoke query generator lambda
-    const result = await invokeLambda(LAMBDA_ARNS.QUERY_GENERATOR, {
-      body: {
-        job_id,
-        products,
-        num_questions: 25,
+    // Submit job to AWS Batch
+    const submitJobCommand = new SubmitJobCommand({
+      jobName: batchJobId,
+      jobQueue: "dev-query-gen-queue",
+      jobDefinition: "dev-QueryGen-definition:2",
+      containerOverrides: {
+        environment: [
+          {
+            name: "JOB_ID",
+            value: job_id,
+          },
+          {
+            name: "NUM_QUESTIONS",
+            value: "25",
+          },
+          {
+            name: "PRODUCTS_JSON",
+            value: JSON.stringify(product_ids),
+          },
+          {
+            name: "MAX_WORKERS",
+            value: "8",
+          },
+          {
+            name: "THREAD_TIMEOUT",
+            value: "600",
+          },
+        ],
       },
     })
 
-    if (result.statusCode === 200) {
-      return createApiResponse({ message: "Query generation started", job_id })
-    } else {
-      return createErrorResponse(result.body?.error || "Query generation failed", result.statusCode)
+    console.log("Submitting AWS Batch job:", {
+      jobName: batchJobId,
+      jobQueue: "dev-query-gen-queue",
+      jobDefinition: "dev-QueryGen-definition:2",
+      environment: {
+        JOB_ID: job_id,
+        NUM_QUESTIONS: "25",
+        PRODUCTS_JSON: JSON.stringify(product_ids),
+        MAX_WORKERS: "8",
+        THREAD_TIMEOUT: "600",
+      }
+    })
+
+    try {
+      const result = await batchClient.send(submitJobCommand)
+      console.log("AWS Batch job submitted successfully:", result)
+      
+      // Return 202 Accepted with the batch job ID for tracking
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Query generation job submitted to AWS Batch",
+          batch_job_id: batchJobId,
+          job_id: job_id,
+          aws_response: result,
+        }),
+        {
+          status: 202,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      )
+    } catch (batchError: any) {
+      console.error("AWS Batch submission error:", batchError)
+      console.error("Error details:", {
+        name: batchError?.name,
+        message: batchError?.message,
+        code: batchError?.code,
+        statusCode: batchError?.statusCode,
+      })
+      return createErrorResponse("Failed to submit job to AWS Batch", 500)
     }
   } catch (error) {
     console.error("Generate queries API error:", error)

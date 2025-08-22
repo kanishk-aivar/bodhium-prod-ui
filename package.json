@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@aws-sdk/client-batch": "^3.873.0",
     "@aws-sdk/client-dynamodb": "^3.868.0",
     "@aws-sdk/client-lambda": "^3.490.0",
     "@aws-sdk/client-s3": "^3.490.0",
