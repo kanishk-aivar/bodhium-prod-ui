@@ -6,11 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ArrowRight, RefreshCw } from "lucide-react"
+import { Loader2, ArrowRight, RefreshCw, Search, ChevronDown, ChevronRight } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import ProductSelector from "../components/ProductSelector"
 import QuerySelector from "../components/QuerySelector"
 import type { ScrapeJob, Product, Query } from "../lib/types"
+
+type ProductQueries = {
+  product_id: number
+  queries: Query[]
+}
 
 export default function QueriesPage() {
   const [brands, setBrands] = useState<string[]>([])
@@ -20,7 +25,7 @@ export default function QueriesPage() {
   const [selectedJob, setSelectedJob] = useState<ScrapeJob | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProducts, setSelectedProducts] = useState<number[]>([])
-  const [queries, setQueries] = useState<Query[]>([])
+  const [queriesByProduct, setQueriesByProduct] = useState<ProductQueries[]>([])
   const [selectedQueries, setSelectedQueries] = useState<number[]>([])
   const [selectedCustomQueries, setSelectedCustomQueries] = useState<number[]>([])
   const [newQueries, setNewQueries] = useState<string[]>([])
@@ -32,6 +37,13 @@ export default function QueriesPage() {
   const [isSubmittingProducts, setIsSubmittingProducts] = useState(false)
   const [isRefreshingQueries, setIsRefreshingQueries] = useState(false)
   const [queriesExist, setQueriesExist] = useState(false)
+  
+  // New state for the redesigned UI
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
+  const [productSearchTerm, setProductSearchTerm] = useState("")
+  const [isLoadingQueries, setIsLoadingQueries] = useState(false)
+  const [selectedProductsForBatch, setSelectedProductsForBatch] = useState<number[]>([])
+  const [expandedQueryTypes, setExpandedQueryTypes] = useState<Set<string>>(new Set())
 
   const { toast } = useToast()
   const router = useRouter()
@@ -126,11 +138,15 @@ export default function QueriesPage() {
     setSelectedJob(null)
     setProducts([])
     setSelectedProducts([])
-    setQueries([])
+    setQueriesByProduct([])
     setSelectedQueries([])
     setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
+    
+    // Reset new UI state
+    setSelectedProductId(null)
+    setProductSearchTerm("")
     
     // Filter jobs by selected brand
     const brandJobs = jobs.filter(job => job.brand_name === brand)
@@ -154,11 +170,16 @@ export default function QueriesPage() {
   const handleJobSelect = (job: ScrapeJob) => {
     setSelectedJob(job)
     setSelectedProducts([])
-    setQueries([])
+    setQueriesByProduct([])
     setSelectedQueries([])
     setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
+    
+    // Reset new UI state
+    setSelectedProductId(null)
+    setProductSearchTerm("")
+    
     fetchProducts(job.job_id)
     
     // Store in localStorage
@@ -169,11 +190,74 @@ export default function QueriesPage() {
   const handleProductSelectionChange = (newSelection: number[]) => {
     setSelectedProducts(newSelection)
     // Clear queries when products change
-    setQueries([])
+    setQueriesByProduct([])
     setSelectedQueries([])
     setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
+  }
+
+  // New handlers for the redesigned UI
+  const handleProductClick = async (productId: number) => {
+    setSelectedProductId(productId)
+    
+    // Don't clear selections - maintain common query list across products
+    // Load queries for all products if not already loaded
+    if (selectedJob && queriesByProduct.length === 0) {
+      const allProductIds = products.map(p => p.product_id)
+      await checkExistingQueries(selectedJob.job_id, allProductIds)
+    }
+  }
+
+  const refreshCurrentProductQueries = async () => {
+    if (!selectedJob) return
+    
+    setIsRefreshingQueries(true)
+    try {
+      // Refresh queries for all products to maintain common list
+      const allProductIds = products.map(p => p.product_id)
+      await checkExistingQueries(selectedJob.job_id, allProductIds)
+    } finally {
+      setIsRefreshingQueries(false)
+    }
+  }
+
+  const generateQueriesForProduct = async (productId: number) => {
+    if (!selectedJob) return
+
+    setIsGeneratingQueries(true)
+    try {
+      const response = await fetch("/api/generate-queries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_id: selectedJob.job_id,
+          product_ids: [productId],
+        }),
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Query generation started!",
+        })
+
+        // Poll for generated queries
+        setTimeout(() => {
+          checkExistingQueries(selectedJob.job_id, [productId])
+        }, 3000)
+      } else {
+        throw new Error("Failed to generate queries")
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate queries",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingQueries(false)
+    }
   }
 
   const submitProductSelection = async () => {
@@ -210,6 +294,7 @@ export default function QueriesPage() {
 
   const checkExistingQueries = async (jobId: string, productIds: number[]) => {
     try {
+      setIsLoadingQueries(true)
       const response = await fetch(`/api/queries/${jobId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -218,17 +303,19 @@ export default function QueriesPage() {
       const data = await response.json()
 
       if (Array.isArray(data) && data.length > 0) {
-        setQueries(data)
+        setQueriesByProduct(data)
         setQueriesExist(true)
       } else {
-        setQueries([])
+        setQueriesByProduct([])
         setQueriesExist(false)
       }
       // Don't clear newQueries here to preserve custom queries
     } catch (error) {
       console.error("Error checking queries:", error)
-      setQueries([])
+      setQueriesByProduct([])
       setQueriesExist(false)
+    } finally {
+      setIsLoadingQueries(false)
     }
   }
 
@@ -292,13 +379,34 @@ export default function QueriesPage() {
     if (selectedQueries.length === 0 && selectedCustomQueriesText.length === 0) {
       toast({
         title: "Error",
-        description: "Please select at least one existing query or custom query",
+        description: "Please select at least one query",
         variant: "destructive",
       })
       return
     }
 
     if (!selectedJob) return
+
+    // Get all products that have selected queries
+    const productsWithSelectedQueries = new Set<number>()
+    
+    // Add products from selected existing queries
+    selectedQueries.forEach(queryId => {
+      const query = allQueries.find(q => q.query_id === queryId)
+      if (query && query.product_id) {
+        productsWithSelectedQueries.add(query.product_id)
+      }
+    })
+    
+    // If we have custom queries, use the currently selected product or all products
+    if (selectedCustomQueriesText.length > 0) {
+      if (selectedProductId) {
+        productsWithSelectedQueries.add(selectedProductId)
+      } else {
+        // If no specific product selected, use all products
+        products.forEach(p => productsWithSelectedQueries.add(p.product_id))
+      }
+    }
 
     setIsProcessingQueries(true)
     try {
@@ -309,7 +417,7 @@ export default function QueriesPage() {
           job_id: selectedJob.job_id,
           existing_query_ids: selectedQueries.length > 0 ? selectedQueries.map(id => Number(id)) : undefined,
           new_queries: selectedCustomQueriesText.length > 0 ? selectedCustomQueriesText : undefined,
-          selected_products: selectedProducts.map(id => Number(id)),
+          selected_products: Array.from(productsWithSelectedQueries),
         }),
       })
 
@@ -334,16 +442,176 @@ export default function QueriesPage() {
     }
   }
 
-  // Group queries by type
-  const groupedQueries = queries.reduce(
-    (acc, query) => {
-      const type = query.query_type || "other"
-      if (!acc[type]) acc[type] = []
-      acc[type].push(query)
-      return acc
-    },
-    {} as Record<string, Query[]>,
-  )
+  // Get all queries from all products for processing
+  const allQueries = queriesByProduct.flatMap(pq => pq.queries)
+
+  // Helper function to get product name by ID
+  const getProductName = (productId: number) => {
+    const product = products.find(p => p.product_id === productId)
+    if (product && product.product_data) {
+      // Use the same logic as ProductSelector component
+      let productData = product.product_data
+      if (typeof productData === "string") {
+        try {
+          productData = JSON.parse(productData)
+        } catch {
+          return `Product ${productId}`
+        }
+      }
+      // Use productname instead of name (as per ProductSelector logic)
+      return productData?.productname || productData?.name || productData?.title || `Product ${productId}`
+    }
+    return `Product ${productId}`
+  }
+
+  // Helper function to get product price
+  const getProductPrice = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return productData?.price || productData?.cost || productData?.current_price || null
+  }
+
+  // Helper function to get product image
+  const getProductImage = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return productData?.image || productData?.image_url || productData?.thumbnail || productData?.photo || null
+  }
+
+  // Helper function to get product rating
+  const getProductRating = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    const rating = productData?.rating || productData?.stars || productData?.score
+    if (!rating || String(rating).toLowerCase() === "n/a") return null
+    return String(rating)
+  }
+
+  // Helper function to get product brand
+  const getProductBrand = (productData: any) => {
+    if (typeof productData === "string") {
+      try {
+        productData = JSON.parse(productData)
+      } catch {
+        return null
+      }
+    }
+    return productData?.brand || productData?.manufacturer || productData?.company || null
+  }
+
+  // Helper function to get selected product
+  const getSelectedProduct = () => {
+    return selectedProductId ? products.find(p => p.product_id === selectedProductId) : null
+  }
+
+  // Helper function to count selected queries for a product
+  const getProductSelectedQueriesCount = (productId: number) => {
+    const productQueries = queriesByProduct.find(pq => pq.product_id === productId)?.queries || []
+    return productQueries.filter(query => selectedQueries.includes(query.query_id)).length
+  }
+
+  // Helper function to toggle accordion sections
+  const toggleQueryType = (queryType: string) => {
+    setExpandedQueryTypes(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(queryType)) {
+        newSet.delete(queryType)
+      } else {
+        newSet.add(queryType)
+      }
+      return newSet
+    })
+  }
+
+  // Helper function to toggle product selection for batch operations
+  const toggleProductForBatch = (productId: number) => {
+    setSelectedProductsForBatch(prev => 
+      prev.includes(productId) 
+        ? prev.filter(id => id !== productId)
+        : [...prev, productId]
+    )
+  }
+
+  // Helper function to select all products for batch
+  const selectAllProductsForBatch = () => {
+    setSelectedProductsForBatch(products.map(p => p.product_id))
+  }
+
+  // Helper function to clear all product selections for batch
+  const clearAllProductsForBatch = () => {
+    setSelectedProductsForBatch([])
+  }
+
+  // Helper function to generate queries for selected products in batch
+  const generateQueriesForBatch = async () => {
+    if (!selectedJob || selectedProductsForBatch.length === 0) return
+
+    setIsGeneratingQueries(true)
+    try {
+      const response = await fetch("/api/generate-queries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_id: selectedJob.job_id,
+          product_ids: selectedProductsForBatch,
+        }),
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Batch query generation started for ${selectedProductsForBatch.length} products!`,
+        })
+
+        // Poll for generated queries
+        setTimeout(() => {
+          const allProductIds = products.map(p => p.product_id)
+          checkExistingQueries(selectedJob.job_id, allProductIds)
+        }, 3000)
+        
+        // Clear batch selection
+        setSelectedProductsForBatch([])
+      } else {
+        throw new Error("Failed to generate queries")
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate batch queries",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingQueries(false)
+    }
+  }
+
+  // Filtered products based on search term
+  const filteredProducts = products.filter(product => {
+    if (!productSearchTerm) return true
+    const productName = getProductName(product.product_id).toLowerCase()
+    return productName.includes(productSearchTerm.toLowerCase()) || 
+           product.product_id.toString().includes(productSearchTerm)
+  })
+
+  // Get queries for the currently selected product
+  const currentProductQueries = selectedProductId 
+    ? queriesByProduct.find(pq => pq.product_id === selectedProductId)?.queries || []
+    : []
 
   // Helper function to format query type titles
   const formatQueryTypeTitle = (type: string) => {
@@ -375,46 +643,39 @@ export default function QueriesPage() {
   }
 
   return (
-    <div className="container mx-auto px-6 md:px-8 py-12 max-w-5xl">
-        <div className="mb-10">
-          <h1 className="text-4xl md:text-5xl font-semibold tracking-tight mb-3 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
+    <div className="h-screen flex flex-col">
+        <div className="px-6 md:px-8 py-6 border-b border-gray-200 dark:border-gray-700">
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
             Select Products & Queries
           </h1>
-          <p className="text-muted-foreground text-base">Choose products and create queries for AI analysis</p>
+          <p className="text-muted-foreground text-sm">Choose products and create queries for AI analysis</p>
         </div>
+        
+        <div className="flex-1 overflow-hidden px-6 md:px-8">{/* This will contain all the scrollable content */}
 
         {brands.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
           <Card className="bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
             <CardContent className="p-8 text-center">
               <p className="text-muted-foreground mb-4">No successful jobs found. Please submit a URL first.</p>
               <p className="text-sm text-muted-foreground">Please submit a URL on the Home page to get started.</p>
             </CardContent>
           </Card>
-        ) : (
-          <>
-            {/* Brand Selection */}
-            <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Select Brand</CardTitle>
-                  <Button size="sm" variant="outline" onClick={fetchJobs} disabled={isLoading}>
-                    {isLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                  </Button>
                 </div>
-              </CardHeader>
-              <CardContent>
+        ) : (
+          <div className="flex flex-col h-full">
+            {/* Combined Product & Query Selection - Takes full height */}
+            <Card className="flex-1 flex flex-col bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10 overflow-hidden">
+              <CardHeader className="pb-3 flex-shrink-0">
                 <div className="space-y-4">
-                  {/* Brand Dropdown */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Brand</label>
+                  {/* Brand Selection Row */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <CardTitle className="text-lg whitespace-nowrap">Brand:</CardTitle>
                     <select
                       value={selectedBrand}
                       onChange={(e) => handleBrandSelect(e.target.value)}
-                      className="w-full h-11 px-3 rounded-xl bg-white/60 dark:bg-white/10 border border-white/60 dark:border-white/10"
+                        className="h-10 px-3 rounded-lg bg-white/60 dark:bg-white/10 border border-white/60 dark:border-white/10 min-w-48"
                     >
                       <option value="">Select a brand...</option>
                       {brands.map((brand) => (
@@ -427,118 +688,376 @@ export default function QueriesPage() {
 
                   {/* Show selected job info */}
                   {selectedJob && (
-                    <div className="space-y-2">
+                      <div className="flex-1 text-center">
                         <p className="text-sm font-medium text-muted-foreground">
-                          Showing products scraped on {new Date(selectedJob.created_at).toLocaleDateString()}
+                          Scraped on {new Date(selectedJob.created_at).toLocaleDateString()}
                         </p>
                         <p className="text-xs text-muted-foreground truncate">
                           {selectedJob.source_url}
                         </p>
                     </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
 
-            {/* Product Selection */}
+                                        <div className="flex items-center gap-2">
             {selectedJob && (
-              <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
-                <CardHeader>
-                  <CardTitle>Select Products</CardTitle>
+                        <Button size="sm" variant="outline" onClick={fetchJobs} disabled={isLoading} title="Refresh jobs from database">
+                          {isLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" />
+                          )}
+                          <span className="ml-1 text-xs">Refresh DB</span>
+                        </Button>
+                      )}
+                      
+                      {(selectedQueries.length > 0 || selectedCustomQueries.length > 0) && (
+                        <Button 
+                          onClick={processQueries} 
+                          disabled={isProcessingQueries}
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          {isProcessingQueries ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              Process Queries ({selectedQueries.length + selectedCustomQueries.length})
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 </CardHeader>
-                <CardContent>
+                  <CardContent className="p-0 flex-1 flex flex-col min-h-0 overflow-hidden">
                   {isLoadingProducts ? (
-                    <div className="text-center py-8">
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
                       <p>Loading products...</p>
+                        </div>
                     </div>
                   ) : products.length === 0 ? (
-                    <div className="text-center py-8">
+                      <div className="flex-1 flex items-center justify-center">
                       <p className="text-muted-foreground">No products found for this job.</p>
                     </div>
                   ) : (
-                    <>
-                      <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800">
-                        <ProductSelector
-                          products={products}
-                          selectedProducts={selectedProducts}
-                          onSelectionChange={handleProductSelectionChange}
-                          disabled={false}
+                      <div className="flex-1 flex min-h-0 overflow-hidden">
+                        {/* Left Sidebar - Products */}
+                        <div className="w-80 border-r border-gray-200 dark:border-gray-700 flex flex-col min-h-0 overflow-hidden">
+                          {/* Search Bar & Batch Controls - Fixed */}
+                          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-3">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                              <Input
+                                placeholder="Search products..."
+                                value={productSearchTerm}
+                                onChange={(e) => setProductSearchTerm(e.target.value)}
+                                className="pl-10 h-10 rounded-lg bg-white/60 dark:bg-white/10 border border-gray-200 dark:border-gray-600"
                         />
                       </div>
-                      {selectedProducts.length > 0 && (
-                        <div className="mt-4 flex justify-end">
-                          <Button onClick={submitProductSelection} disabled={isSubmittingProducts}>
-                            {isSubmittingProducts ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Loading Queries...
-                              </>
-                            ) : (
-                              <>
-                                Continue to Queries <ArrowRight className="ml-2 h-4 w-4" />
-                              </>
-                            )}
+                            
+                            {/* Batch Selection Controls */}
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={selectAllProductsForBatch}
+                                  className="h-7 px-2 text-xs"
+                                >
+                                  Select All
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={clearAllProductsForBatch}
+                                  className="h-7 px-2 text-xs"
+                                  disabled={selectedProductsForBatch.length === 0}
+                                >
+                                  Clear
                           </Button>
                         </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Query Selection */}
-            {selectedJob && selectedProducts.length > 0 && (
-              <Card className="mb-8 bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2">
-                      Select & Add Queries
-                      <Badge variant="secondary" className="ml-2">
-                        {selectedProducts.length} products selected
-                      </Badge>
-                    </CardTitle>
+                              
+                              {selectedProductsForBatch.length > 0 && (
                     <Button 
                       size="sm" 
-                      variant="outline" 
-                      onClick={async () => {
-                        if (!selectedJob) return
-                        setIsRefreshingQueries(true)
-                        try {
-                          await checkExistingQueries(selectedJob.job_id, selectedProducts)
-                        } finally {
-                          setIsRefreshingQueries(false)
-                        }
-                      }}
-                      disabled={isRefreshingQueries}
-                      title="Refresh queries from database"
-                    >
-                      {isRefreshingQueries ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
+                                  onClick={generateQueriesForBatch}
+                                  disabled={isGeneratingQueries}
+                                  className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                  {isGeneratingQueries ? (
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  ) : null}
+                                  Generate ({selectedProductsForBatch.length})
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Products List - Scrollable */}
+                          <div className="flex-1 min-h-0">
+                            <div className="h-full overflow-y-auto p-4 space-y-3">
+                              {filteredProducts.map((product) => {
+                                const hasSelectedQueries = getProductSelectedQueriesCount(product.product_id) > 0
+                                const isSelectedForBatch = selectedProductsForBatch.includes(product.product_id)
+                                const productQueries = queriesByProduct.find(pq => pq.product_id === product.product_id)?.queries || []
+                                
+                                return (
+                                  <div
+                                    key={product.product_id}
+                                    className={`p-3 rounded-lg border transition-all duration-200 ${
+                                      selectedProductId === product.product_id
+                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md'
+                                        : hasSelectedQueries
+                                        ? 'border-green-400 bg-green-50 dark:bg-green-900/20 shadow-sm'
+                                        : isSelectedForBatch
+                                        ? 'border-purple-400 bg-purple-50 dark:bg-purple-900/20 shadow-sm'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-sm'
+                                    }`}
+                                  >
+                                    <div className="flex gap-3">
+                                      {/* Batch Selection Checkbox */}
+                                      <div className="flex-shrink-0 flex items-start pt-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelectedForBatch}
+                                          onChange={(e) => {
+                                            e.stopPropagation()
+                                            toggleProductForBatch(product.product_id)
+                                          }}
+                                          className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                        />
+                                      </div>
+                                      {/* Product Image */}
+                                      <div className="flex-shrink-0">
+                                        {getProductImage(product.product_data) ? (
+                                          <img
+                                            src={getProductImage(product.product_data)}
+                                            alt={getProductName(product.product_id)}
+                                            className="w-12 h-12 object-cover rounded-md border border-gray-200 dark:border-gray-600 cursor-pointer"
+                                            onClick={() => handleProductClick(product.product_id)}
+                                            onError={(e) => {
+                                              e.currentTarget.style.display = 'none'
+                                              e.currentTarget.nextElementSibling?.classList.remove('hidden')
+                                            }}
+                                          />
+                                        ) : null}
+                                        <div 
+                                          className={`w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-md flex items-center justify-center cursor-pointer ${getProductImage(product.product_data) ? 'hidden' : ''}`}
+                                          onClick={() => handleProductClick(product.product_id)}
+                                        >
+                                          <span className="text-xs text-gray-400 font-medium">
+                                            {getProductName(product.product_id).charAt(0).toUpperCase()}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {/* Product Info */}
+                                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleProductClick(product.product_id)}>
+                                        <div className="flex items-start justify-between">
+                                          <div className="flex-1 min-w-0">
+                                            <h4 className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                              {getProductName(product.product_id)}
+                                            </h4>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                              ID: {product.product_id}
+                                            </p>
+                                            {getProductPrice(product.product_data) && (
+                                              <p className="text-xs font-medium text-green-600 dark:text-green-400 mt-1">
+                                                {getProductPrice(product.product_data)}
+                                              </p>
+                                            )}
+                                            {hasSelectedQueries && (
+                                              <p className="text-xs font-medium text-green-600 dark:text-green-400 mt-1">
+                                                {getProductSelectedQueriesCount(product.product_id)} selected
+                                              </p>
+                                            )}
+                                          </div>
+                                          
+                                          {/* Right side info */}
+                                          <div className="flex flex-col items-end gap-1 ml-2">
+                                            {getProductRating(product.product_data) && (
+                                              <div className="text-xs text-yellow-600 dark:text-yellow-400">
+                                                ⭐ {getProductRating(product.product_data)}
+                                              </div>
+                                            )}
+                                            <div className="text-xs text-blue-600 dark:text-blue-400">
+                                              {productQueries.length} queries
+                                            </div>
+                                            
+                                            {/* Selection Indicators */}
+                                            <div className="flex gap-1">
+                                              {selectedProductId === product.product_id && (
+                                                <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
+                                              )}
+                                              {hasSelectedQueries && (
+                                                <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                                              )}
+                                              {isSelectedForBatch && (
+                                                <div className="h-2 w-2 bg-purple-500 rounded-full"></div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                      </div>
+
+                        {/* Right Main Area - Queries */}
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                          {!selectedProductId ? (
+                            <div className="flex-1 flex items-center justify-center">
+                              <div className="text-center">
+                                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                  <Search className="h-8 w-8 text-gray-400" />
+                                </div>
+                                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                  Select a Product
+                                </h3>
+                                <p className="text-gray-500 dark:text-gray-400 max-w-sm">
+                                  Choose a product from the sidebar to view and manage its queries
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex-1 flex flex-col min-h-0">
+                                                                                                                        {/* Product Header - Fixed */}
+                              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                                <div className="flex items-start justify-between">
+                                  {/* Product Info */}
+                                  <div className="flex-1">
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                                          {getProductName(selectedProductId)}
+                                        </h3>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                          Product ID: {selectedProductId}
+                                        </p>
+                                      </div>
+                                      
+                                      {/* Right side product info */}
+                                      <div className="flex flex-col items-end gap-1 ml-4">
+                                      {getProductPrice(getSelectedProduct()?.product_data) && (
+                                          <p className="text-sm font-medium text-green-600 dark:text-green-400 mt-1">
+                                            {getProductPrice(getSelectedProduct()?.product_data)}
+                                          </p>
+                                        )}
+                                        {getProductRating(getSelectedProduct()?.product_data) && (
+                                          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+                                            Rating: ⭐ {getProductRating(getSelectedProduct()?.product_data)}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Actions */}
+                                  <div className="flex-shrink-0 ml-4">
+                                    <Button 
+                                      onClick={() => generateQueriesForProduct(selectedProductId)} 
+                                      variant="outline" 
+                                      size="sm"
+                                      disabled={isGeneratingQueries}
+                                    >
+                                      {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                      Regenerate Queries
                     </Button>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {!queriesExist ? (
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground mb-4">No queries found for the selected products. Generate queries to continue.</p>
-                      <Button onClick={generateQueries} disabled={isGeneratingQueries}>
+                                </div>
+                              </div>
+
+                              {/* Queries Content - Scrollable */}
+                              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                                <div className="flex-1 overflow-y-auto p-6">
+                              {isLoadingQueries ? (
+                                <div className="text-center py-12">
+                                  <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                                  </div>
+                                  <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                    Loading from Database
+                                  </h4>
+                                  <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+                                    Fetching existing queries for the selected products...
+                                  </p>
+                                </div>
+                              ) : currentProductQueries.length === 0 ? (
+                                <div className="text-center py-12">
+                                  <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <ArrowRight className="h-8 w-8 text-gray-400" />
+                                  </div>
+                                  <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                    No Queries Available
+                                  </h4>
+                                  <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                    Generate queries for this product to get started with AI analysis
+                                  </p>
+                                  <Button onClick={() => generateQueriesForProduct(selectedProductId)} disabled={isGeneratingQueries}>
                         {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                         Generate Queries
                       </Button>
                     </div>
                   ) : (
-                    <>
-                      {/* Group queries by type */}
-                      {Object.entries(groupedQueries).map(([type, typeQueries]) => (
-                        <div key={type} className="mb-6">
-                          <h3 className="text-lg font-medium mb-3">
+                                                                <div className="space-y-4">
+                                  {/* Group queries by type - Accordion Format */}
+                                  {(() => {
+                                    const groupedByType = currentProductQueries.reduce(
+                                      (acc, query) => {
+                                        const type = query.query_type || "other"
+                                        if (!acc[type]) acc[type] = []
+                                        acc[type].push(query)
+                                        return acc
+                                      },
+                                      {} as Record<string, Query[]>,
+                                    )
+
+                                    return Object.entries(groupedByType).map(([type, typeQueries]) => {
+                                      const isExpanded = expandedQueryTypes.has(type)
+                                      const selectedCount = typeQueries.filter(q => selectedQueries.includes(q.query_id)).length
+                                      
+                                      return (
+                                        <div key={type} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                                          {/* Accordion Header */}
+                                          <button
+                                            onClick={() => toggleQueryType(type)}
+                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 flex items-center justify-between text-left"
+                                          >
+                                            <div className="flex items-center gap-3">
+                                              {isExpanded ? (
+                                                <ChevronDown className="h-4 w-4 text-gray-500" />
+                                              ) : (
+                                                <ChevronRight className="h-4 w-4 text-gray-500" />
+                                              )}
+                                              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100">
                             {formatQueryTypeTitle(type)}
-                          </h3>
+                                              </h4>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              {selectedCount > 0 && (
+                                                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                                  {selectedCount} selected
+                                                </Badge>
+                                              )}
+                                              <Badge variant="outline">
+                                                {typeQueries.length} queries
+                                              </Badge>
+                                            </div>
+                                          </button>
+                                          
+                                          {/* Accordion Content */}
+                                          {isExpanded && (
+                                            <div className="p-4 bg-white dark:bg-gray-900">
                           <QuerySelector
                             queries={typeQueries}
                             selectedQueries={selectedQueries}
@@ -546,19 +1065,23 @@ export default function QueriesPage() {
                             disabled={false}
                           />
                         </div>
-                      ))}
+                                          )}
+                                        </div>
+                                      )
+                                    })
+                                                                    })()}
 
                       {/* Custom Queries Section */}
                       {customQueriesAsObjects.length > 0 && (
-                        <div className="mb-6">
-                          <h3 className="text-lg font-medium mb-3">Custom Queries</h3>
-                          <QuerySelector
-                            queries={customQueriesAsObjects}
-                            selectedQueries={selectedCustomQueries}
-                            onSelectionChange={setSelectedCustomQueries}
-                            disabled={false}
-                          />
-                          <div className="mt-4 text-right">
+                                    <div className="space-y-4 mt-6">
+                                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                                        {/* Custom Queries Header */}
+                                        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+                                          <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100">Custom Queries</h4>
+                                          <div className="flex items-center gap-2">
+                                            <Badge variant="secondary" className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                                              {selectedCustomQueries.length} selected
+                                            </Badge>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -566,56 +1089,55 @@ export default function QueriesPage() {
                                 setNewQueries([])
                                 setSelectedCustomQueries([])
                               }}
-                              className="text-red-600 hover:text-red-800 hover:bg-red-100 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
+                                              className="text-red-600 hover:text-red-800 hover:bg-red-100 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20 h-6 px-2 text-xs"
                             >
-                              Clear All Custom
+                                              Clear All
                             </Button>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Custom Queries Content */}
+                                        <div className="p-4 bg-white dark:bg-gray-900">
+                                          <QuerySelector
+                                            queries={customQueriesAsObjects}
+                                            selectedQueries={selectedCustomQueries}
+                                            onSelectionChange={setSelectedCustomQueries}
+                                            disabled={false}
+                                          />
+                                        </div>
                           </div>
                         </div>
                       )}
+                                </div>
+                              )}
+                                </div>
 
-                      <div className="mt-6 space-y-4">
+                                {/* Fixed Bottom Section - Custom Query Input */}
+                                <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
                         <div className="flex gap-2">
                           <Input
                             placeholder="Add custom query..."
                             value={customQuery}
                             onChange={(e) => setCustomQuery(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && addCustomQuery()}
-                            className="h-12 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-md border border-white/60 dark:border-white/10 placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]/50 focus-visible:border-[hsl(var(--accent))]/50"
+                                      className="h-10 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600"
                           />
-                          <Button onClick={addCustomQuery} variant="outline">
+                                    <Button onClick={addCustomQuery} variant="outline" size="sm">
                             Add Query
                           </Button>
                         </div>
-
-                        <div className="flex justify-between">
-                          <div className="flex gap-2">
-                            <Button onClick={generateQueries} variant="outline" disabled={isGeneratingQueries}>
-                              {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                              Regenerate Queries
-                            </Button>
                           </div>
-                          <Button onClick={processQueries} disabled={(selectedQueries.length === 0 && selectedCustomQueries.length === 0) || isProcessingQueries}>
-                            {isProcessingQueries ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Processing...
-                              </>
-                            ) : (
-                              <>
-                                Process Queries ({selectedQueries.length + selectedCustomQueries.length}) <ArrowRight className="ml-2 h-4 w-4" />
-                              </>
-                            )}
-                          </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </>
                   )}
                 </CardContent>
               </Card>
-            )}
-          </>
+          </div>
         )}
+        </div>
     </div>
   )
 }

@@ -9,6 +9,11 @@ type QueryRow = {
   is_active: boolean
 }
 
+type ProductQueries = {
+  product_id: number
+  queries: QueryRow[]
+}
+
 export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
   try {
     const { jobId } = params
@@ -25,15 +30,22 @@ export async function GET(request: NextRequest, { params }: { params: { jobId: s
       [jobId],
     )
 
-    const queries = (records as QueryRow[]).map((record) => ({
-      query_id: record.query_id,
-      product_id: record.product_id,
-      query_text: record.query_text,
-      query_type: record.query_type,
-      is_active: record.is_active,
-    }))
+    // Group queries by product_id
+    const queriesByProduct = (records as QueryRow[]).reduce((acc, query) => {
+      const productId = query.product_id || 0
+      if (!acc[productId]) {
+        acc[productId] = {
+          product_id: productId,
+          queries: []
+        }
+      }
+      acc[productId].queries.push(query)
+      return acc
+    }, {} as Record<number, ProductQueries>)
 
-    return createApiResponse(queries)
+    const productQueries = Object.values(queriesByProduct)
+
+    return createApiResponse(productQueries)
   } catch (error) {
     console.error("Queries API error:", error)
     return createErrorResponse("Failed to fetch queries")
@@ -66,15 +78,22 @@ export async function POST(request: NextRequest, { params }: { params: { jobId: 
       productIds,
     )
 
-    const queries = (records as QueryRow[]).map((record) => ({
-      query_id: record.query_id,
-      product_id: record.product_id,
-      query_text: record.query_text,
-      query_type: record.query_type,
-      is_active: record.is_active,
-    }))
+    // Group queries by product_id
+    const queriesByProduct = (records as QueryRow[]).reduce((acc, query) => {
+      const productId = query.product_id || 0
+      if (!acc[productId]) {
+        acc[productId] = {
+          product_id: productId,
+          queries: []
+        }
+      }
+      acc[productId].queries.push(query)
+      return acc
+    }, {} as Record<number, ProductQueries>)
 
-    return createApiResponse(queries)
+    const productQueries = Object.values(queriesByProduct)
+
+    return createApiResponse(productQueries)
   } catch (error) {
     console.error("Queries API POST error:", error)
     return createErrorResponse("Failed to fetch queries for products")
