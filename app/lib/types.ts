@@ -5,6 +5,11 @@ export interface ScrapeJob {
   created_at: string
   updated_at: string
   brand_name: string | null
+  progress?: {
+    urls_collected: number
+    urls_visited: number
+    products_scraped: number
+  }
 }
 
 export interface Product {

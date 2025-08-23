@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
       body: {
         url,
         brand_name: finalBrandName,
+        max_urls: 1000,
       },
     })
 

@@ -7,11 +7,16 @@ export async function GET(request: NextRequest, { params }: { params: { jobId: s
 
     const records = await executeQuery(
       `
-      SELECT p.product_id, p.product_hash, p.product_data, p.source_url, p.first_scraped_at, p.brand_name
+      SELECT p.product_id,
+          p.product_hash,
+          p.product_data,
+          p.source_url,
+          p.first_scraped_at,
+          p.brand_name
       FROM products p
-      JOIN jobselectedproducts jsp ON p.product_id = jsp.product_id
-      WHERE jsp.job_id = $1
-      ORDER BY p.first_scraped_at DESC
+      WHERE p.job_id = $1
+      ORDER BY p.first_scraped_at DESC;
+
     `,
       [jobId],
     )

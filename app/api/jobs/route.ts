@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   try {
     const records = await executeQuery(`
-      SELECT job_id, source_url, status, created_at, updated_at, brand_name
+      SELECT job_id, source_url, status, created_at, updated_at, brand_name, progress
       FROM scrapejobs
       ORDER BY created_at DESC
       LIMIT 50
@@ -18,6 +18,7 @@ export async function GET() {
       created_at: record.created_at,
       updated_at: record.updated_at,
       brand_name: record.brand_name,
+      progress: record.progress,
     }))
 
     return createApiResponse(jobs)

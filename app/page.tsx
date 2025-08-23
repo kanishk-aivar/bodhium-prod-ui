@@ -105,6 +105,11 @@ export default function HomePage() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           brand_name: brandName.trim() || new URL(brandUrl).hostname,
+          progress: {
+            urls_collected: 0,
+            urls_visited: 0,
+            products_scraped: 0
+          }
         }
 
         setJobs((prev) => [newJob, ...prev])
@@ -525,10 +530,10 @@ export default function HomePage() {
         </Card>
 
         {/* Recent Jobs */}
-        <Card className="bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
-          <CardHeader>
+        <Card className="bg-transparent backdrop-blur supports-[backdrop-filter]:bg-transparent border border-white/60 shadow-lg dark:bg-transparent dark:border-white/10">
+        <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Recent Workflows</CardTitle>
+              <CardTitle className="text-xl">Recent Workflows</CardTitle>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={fetchJobs}>
                   <RefreshCw className="h-4 w-4" />
@@ -541,41 +546,152 @@ export default function HomePage() {
           </CardHeader>
           <CardContent>
             {isWorkflowsExpanded && (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-6 max-h-[32rem] overflow-y-auto pr-1">
                 {Array.isArray(jobs) && jobs.length > 0 ? (
                   jobs.map((job) => (
                     <div
                       key={job.job_id}
-                      className="flex items-center justify-between p-4 bg-white/60 dark:bg-white/5 backdrop-blur-md rounded-xl border border-white/60 dark:border-white/10 shadow-sm"
+                      className="p-6 bg-white/60 dark:bg-white/5 backdrop-blur-md rounded-xl border border-white/60 dark:border-white/10 shadow-sm hover:shadow-md transition-shadow"
                     >
-                      <div className="flex items-center gap-3">
-                        {getStatusIcon(job.status ?? "")}
-                        <div>
-                          <p className="font-medium text-sm">{job.brand_name || "Unknown Brand"}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(job.created_at).toLocaleString()}</p>
+                      {/* Header Row */}
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl">
+                            {getStatusIcon(job.status ?? "")}
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                              {job.brand_name || "Unknown Brand"}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                              Started {new Date(job.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                          <Badge className={`px-3 py-1.5 text-sm font-medium ${getStatusColor(job.status ?? "")}`}>
+                            {job.status}
+                          </Badge>
+                          {job.status === "JOB_SUCCESS" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => router.push("/products")}
+                              className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            >
+                              View Products <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          )}
+                          {job.status === "llm_generated" && (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => router.push("/results")}
+                              className="hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                            >
+                              View Results <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge className={getStatusColor(job.status ?? "")}>{job.status}</Badge>
-                        {job.status === "JOB_SUCCESS" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => router.push("/products")}
-                          >
-                            Products <ArrowRight className="ml-1 h-3 w-3" />
-                          </Button>
-                        )}
-                        {job.status === "llm_generated" && (
-                          <Button size="sm" variant="outline" onClick={() => router.push("/results")}>
-                            Results <ArrowRight className="ml-1 h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
+
+                      {/* Progress Section */}
+                      {job.progress && (job.status === "JOB_RUNNING" || job.status === "SUBMITTED") && (
+                        <div className="space-y-5">
+                          {/* Products Found - Large Display */}
+                          <div className="text-center py-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-200 dark:border-green-800">
+                            <div className="text-3xl font-bold text-green-600 dark:text-green-400 mb-1">
+                              {job.progress.products_scraped}
+                            </div>
+                            <div className="text-sm font-medium text-green-700 dark:text-green-300">
+                              Products Found
+                            </div>
+                          </div>
+
+                          {/* URL Progress Bar */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                URL Processing Progress
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {job.progress.urls_visited} / {job.progress.urls_collected}
+                              </span>
+                            </div>
+                            
+                            {/* Progress Bar */}
+                            <div className="relative h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 rounded-full transition-all duration-1000 ease-out shadow-sm"
+                                style={{ 
+                                  width: `${Math.min((job.progress.urls_visited / Math.max(job.progress.urls_collected, 1)) * 100, 100)}%` 
+                                }}
+                              />
+                              {/* Animated shimmer effect */}
+                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
+                            </div>
+                          </div>
+
+                          {/* Live Stats Grid */}
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                              <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                                {job.progress.urls_collected}
+                              </div>
+                              <div className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">
+                                URLs Found
+                              </div>
+                            </div>
+                            <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                              <div className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
+                                {job.progress.urls_visited}
+                              </div>
+                              <div className="text-xs font-medium text-yellow-700 dark:text-yellow-300 uppercase tracking-wide">
+                                URLs Visited
+                              </div>
+                            </div>
+                            <div className="text-center p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                              <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                                {job.progress.products_scraped}
+                              </div>
+                              <div className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
+                                Products
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Live Indicator */}
+                          <div className="flex items-center justify-center gap-2 py-2">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">
+                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                              <span className="text-sm font-medium">Live Processing</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Completed Job Summary */}
+                      {job.progress && (job.status === "JOB_SUCCESS" || job.status === "llm_generated") && (
+                        <div className="text-center py-4 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-1">
+                            {job.progress.products_scraped}
+                          </div>
+                          <div className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                            Products Successfully Scraped
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 ) : (
-                  <p className="text-muted-foreground text-center py-4">No workflows found</p>
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+                      <FileText className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <p className="text-muted-foreground text-lg">No workflows found</p>
+                    <p className="text-sm text-muted-foreground mt-1">Start by submitting a brand URL above</p>
+                  </div>
                 )}
               </div>
             )}
