@@ -599,7 +599,9 @@ export default function HomePage() {
           {isWorkflowsExpanded && (
             <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
               {Array.isArray(jobs) && jobs.length > 0 ? (
-                jobs.map((job) => (
+                jobs
+                  .filter((job) => job.brand_name !== "Ad-hoc")
+                  .map((job) => (
                   <div
                     key={job.job_id}
                     className="group relative p-6 bg-white/70 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-white/60 dark:border-white/10 shadow-sm hover:shadow-lg hover:bg-white/80 dark:hover:bg-white/10 transition-all duration-200"
@@ -749,7 +751,7 @@ export default function HomePage() {
                   <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center">
                     <FileText className="w-8 h-8 text-gray-400" />
                   </div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No workflows yet</h3>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No crawls found</h3>
                   <p className="text-muted-foreground">
                     Start by submitting a brand URL or uploading a JSON file above
                   </p>

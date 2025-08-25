@@ -124,9 +124,9 @@ export default function ProductsPage() {
     return productData?.productname || productData?.name || productData?.title || "Unknown Product"
   }
 
-  const getProductPrice = (productData: any) => {
-    return productData?.current_price || productData?.price || productData?.cost || null
-  }
+  // const getProductPrice = (productData: any) => {
+  //   return productData?.current_price || productData?.price || productData?.cost || null
+  // }
 
   const getUniquebrands = () => {
     return brands
@@ -242,7 +242,7 @@ export default function ProductsPage() {
                       <TableHead className="w-16">ID</TableHead>
                       <TableHead className="min-w-0">Product Name</TableHead>
                       <TableHead className="w-32">Brand</TableHead>
-                      <TableHead className="w-24">Price</TableHead>
+                      {/* <TableHead className="w-24">Price</TableHead> */}
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -250,7 +250,7 @@ export default function ProductsPage() {
                     {filteredProducts.map((product) => {
                       const productData = getProductData(product.product_data)
                       const name = getProductName(productData)
-                      const price = getProductPrice(productData)
+                      // const price = getProductPrice(productData)
                       
                       return (
                         <TableRow key={product.product_id} className="border-white/20 hover:bg-white/20">
@@ -271,13 +271,13 @@ export default function ProductsPage() {
                               <span className="text-muted-foreground text-xs">Unknown</span>
                             )}
                           </TableCell>
-                          <TableCell className="w-24">
+                          {/* <TableCell className="w-24">
                             {price ? (
                               <span className="font-medium text-sm whitespace-nowrap">{price}</span>
                             ) : (
                               <span className="text-muted-foreground text-xs">-</span>
                             )}
-                          </TableCell>
+                          </TableCell> */}
                           <TableCell className="w-12">
                             {product.source_url && (
                               <Button variant="ghost" size="sm" asChild>

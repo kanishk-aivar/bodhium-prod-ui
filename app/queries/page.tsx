@@ -42,6 +42,7 @@ export default function QueriesPage() {
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
   const [productSearchTerm, setProductSearchTerm] = useState("")
   const [isLoadingQueries, setIsLoadingQueries] = useState(false)
+  const [isInitialQueriesLoading, setIsInitialQueriesLoading] = useState(false)
   const [selectedProductsForBatch, setSelectedProductsForBatch] = useState<number[]>([])
   const [expandedQueryTypes, setExpandedQueryTypes] = useState<Set<string>>(new Set())
 
@@ -51,6 +52,22 @@ export default function QueriesPage() {
   useEffect(() => {
     fetchJobs()
   }, [])
+
+  const resetAllSelections = () => {
+    setSelectedBrand("")
+    setSelectedJob(null)
+    setProducts([])
+    setSelectedProducts([])
+    setQueriesByProduct([])
+    setSelectedQueries([])
+    setSelectedCustomQueries([])
+    setNewQueries([])
+    setSelectedProductId(null)
+    setProductSearchTerm("")
+    setSelectedProductsForBatch([])
+    setExpandedQueryTypes(new Set())
+    setQueriesExist(false)
+  }
 
   const fetchJobs = async () => {
     try {
@@ -70,31 +87,24 @@ export default function QueriesPage() {
         )).sort()
         setBrands(uniqueBrands)
         
-        // Try to load from localStorage first
-        const storedBrand = localStorage.getItem('selectedBrand')
-        const storedJobId = localStorage.getItem('selectedJobId')
-        const storedProductIds = localStorage.getItem('selectedProducts')
-        
-        if (storedBrand && uniqueBrands.includes(storedBrand)) {
-          setSelectedBrand(storedBrand)
-          const brandJobs = successfulJobs.filter(job => job.brand_name === storedBrand)
-          setFilteredJobs(brandJobs)
-          
-          if (storedJobId && storedProductIds) {
-            const storedJob = brandJobs.find(job => job.job_id === storedJobId)
-            if (storedJob) {
-              setSelectedJob(storedJob)
-              await fetchProducts(storedJobId)
-              const parsedProductIds = JSON.parse(storedProductIds)
-              setSelectedProducts(parsedProductIds)
-              await checkExistingQueries(storedJobId, parsedProductIds)
-            }
-          }
-        }
+        // Always start with default state - no stored selections
+        setSelectedBrand("")
+        setFilteredJobs([])
+        setSelectedJob(null)
+        setProducts([])
+        setSelectedProducts([])
+        setQueriesByProduct([])
       } else {
         console.error("Jobs API returned non-array:", data)
         setJobs([])
         setBrands([])
+        // Reset to default state when no jobs
+        setSelectedBrand("")
+        setFilteredJobs([])
+        setSelectedJob(null)
+        setProducts([])
+        setSelectedProducts([])
+        setQueriesByProduct([])
         toast({
           title: "Warning",
           description: "Failed to load jobs",
@@ -105,6 +115,13 @@ export default function QueriesPage() {
       console.error("Error fetching jobs:", error)
       setJobs([])
       setBrands([])
+      // Reset to default state on error
+      setSelectedBrand("")
+      setFilteredJobs([])
+      setSelectedJob(null)
+      setProducts([])
+      setSelectedProducts([])
+      setQueriesByProduct([])
       toast({
         title: "Error",
         description: "Failed to fetch jobs",
@@ -121,6 +138,17 @@ export default function QueriesPage() {
       const response = await fetch(`/api/products/${jobId}`)
       const data = await response.json()
       setProducts(data)
+      
+      // Automatically load queries for all products after products are fetched
+      if (data && data.length > 0) {
+        setIsInitialQueriesLoading(true)
+        try {
+          const allProductIds = data.map((p: Product) => p.product_id)
+          await checkExistingQueries(jobId, allProductIds)
+        } finally {
+          setIsInitialQueriesLoading(false)
+        }
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -157,14 +185,7 @@ export default function QueriesPage() {
       const latestJob = brandJobs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       setSelectedJob(latestJob)
       fetchProducts(latestJob.job_id)
-      
-      // Store in localStorage
-      localStorage.setItem('selectedJobId', latestJob.job_id)
     }
-    
-    // Store in localStorage
-    localStorage.setItem('selectedBrand', brand)
-    localStorage.removeItem('selectedProducts')
   }
 
   const handleJobSelect = (job: ScrapeJob) => {
@@ -181,10 +202,6 @@ export default function QueriesPage() {
     setProductSearchTerm("")
     
     fetchProducts(job.job_id)
-    
-    // Store in localStorage
-    localStorage.setItem('selectedJobId', job.job_id)
-    localStorage.removeItem('selectedProducts')
   }
 
   const handleProductSelectionChange = (newSelection: number[]) => {
@@ -222,43 +239,7 @@ export default function QueriesPage() {
     }
   }
 
-  const generateQueriesForProduct = async (productId: number) => {
-    if (!selectedJob) return
 
-    setIsGeneratingQueries(true)
-    try {
-      const response = await fetch("/api/generate-queries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_id: selectedJob.job_id,
-          product_ids: [productId],
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Query generation started!",
-        })
-
-        // Poll for generated queries
-        setTimeout(() => {
-          checkExistingQueries(selectedJob.job_id, [productId])
-        }, 3000)
-      } else {
-        throw new Error("Failed to generate queries")
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate queries",
-        variant: "destructive",
-      })
-    } finally {
-      setIsGeneratingQueries(false)
-    }
-  }
 
   const submitProductSelection = async () => {
     if (selectedProducts.length === 0) {
@@ -281,11 +262,6 @@ export default function QueriesPage() {
 
     setIsSubmittingProducts(true)
     try {
-      // Store in localStorage for persistence
-      localStorage.setItem('selectedBrand', selectedBrand)
-      localStorage.setItem('selectedJobId', selectedJob.job_id)
-      localStorage.setItem('selectedProducts', JSON.stringify(selectedProducts))
-
       await checkExistingQueries(selectedJob.job_id, selectedProducts)
     } finally {
       setIsSubmittingProducts(false)
@@ -464,17 +440,17 @@ export default function QueriesPage() {
     return `Product ${productId}`
   }
 
-  // Helper function to get product price
-  const getProductPrice = (productData: any) => {
-    if (typeof productData === "string") {
-      try {
-        productData = JSON.parse(productData)
-      } catch {
-        return null
-      }
-    }
-    return productData?.price || productData?.cost || productData?.current_price || null
-  }
+  // // Helper function to get product price
+  // const getProductPrice = (productData: any) => {
+  //   if (typeof productData === "string") {
+  //     try {
+  //       productData = JSON.parse(productData)
+  //     } catch {
+  //       return null
+  //     }
+  //   }
+  //   return productData?.price || productData?.cost || productData?.current_price || null
+  // }
 
   // Helper function to get product image
   const getProductImage = (productData: any) => {
@@ -559,7 +535,19 @@ export default function QueriesPage() {
 
   // Helper function to generate queries for selected products in batch
   const generateQueriesForBatch = async () => {
-    if (!selectedJob || selectedProductsForBatch.length === 0) return
+    if (!selectedJob) return
+
+    // If no products are selected for batch, use all products
+    const productIdsToUse = selectedProductsForBatch.length > 0 ? selectedProductsForBatch : products.map(p => p.product_id)
+    
+    if (productIdsToUse.length === 0) {
+      toast({
+        title: "Error",
+        description: "No products available to generate queries for",
+        variant: "destructive",
+      })
+      return
+    }
 
     setIsGeneratingQueries(true)
     try {
@@ -568,14 +556,14 @@ export default function QueriesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           job_id: selectedJob.job_id,
-          product_ids: selectedProductsForBatch,
+          product_ids: productIdsToUse,
         }),
       })
 
       if (response.ok) {
         toast({
           title: "Success",
-          description: `Batch query generation started for ${selectedProductsForBatch.length} products!`,
+          description: `Batch query generation started for ${productIdsToUse.length} products!`,
         })
 
         // Poll for generated queries
@@ -699,17 +687,6 @@ export default function QueriesPage() {
                   )}
 
                                         <div className="flex items-center gap-2">
-            {selectedJob && (
-                        <Button size="sm" variant="outline" onClick={fetchJobs} disabled={isLoading} title="Refresh jobs from database">
-                          {isLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-4 w-4" />
-                          )}
-                          <span className="ml-1 text-xs">Refresh DB</span>
-                        </Button>
-                      )}
-                      
                       {(selectedQueries.length > 0 || selectedCustomQueries.length > 0) && (
                         <Button 
                           onClick={processQueries} 
@@ -729,6 +706,58 @@ export default function QueriesPage() {
                           )}
                         </Button>
                       )}
+                      
+                      {selectedJob && (
+                        <Button 
+                          size="sm" 
+                          onClick={generateQueriesForBatch}
+                          disabled={isGeneratingQueries}
+                          className="h-8 px-3 text-sm bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                        >
+                          {isGeneratingQueries ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : null}
+                          {selectedProductsForBatch.length > 0 
+                            ? `Generate (${selectedProductsForBatch.length})` 
+                            : 'Generate All Queries'
+                          }
+                        </Button>
+                      )}
+                      
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={async () => {
+                          if (selectedJob) {
+                            // If we have a selected job, reload products and queries for it
+                            await fetchProducts(selectedJob.job_id)
+                            const allProductIds = products.map(p => p.product_id)
+                            if (allProductIds.length > 0) {
+                              await checkExistingQueries(selectedJob.job_id, allProductIds)
+                            }
+                            toast({
+                              title: "Reload Complete",
+                              description: "Products and queries have been refreshed",
+                            })
+                          } else {
+                            // If no job selected, just reload jobs
+                            await fetchJobs()
+                            toast({
+                              title: "Reload Complete",
+                              description: "Jobs have been refreshed",
+                            })
+                          }
+                        }} 
+                        disabled={isLoading} 
+                        title="Reload products and queries for current job, or reload jobs if no job selected"
+                        className="h-8 w-8 p-0"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -762,6 +791,8 @@ export default function QueriesPage() {
                       </div>
                             
                             {/* Batch Selection Controls */}
+                            <div className="text-xs text-muted-foreground mb-2">
+                            </div>
                             <div className="flex items-center justify-between text-xs">
                               <div className="flex items-center gap-2">
                                 <Button
@@ -782,25 +813,19 @@ export default function QueriesPage() {
                                   Clear
                           </Button>
                         </div>
-                              
-                              {selectedProductsForBatch.length > 0 && (
-                    <Button 
-                      size="sm" 
-                                  onClick={generateQueriesForBatch}
-                                  disabled={isGeneratingQueries}
-                                  className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                                >
-                                  {isGeneratingQueries ? (
-                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                  ) : null}
-                                  Generate ({selectedProductsForBatch.length})
-                                </Button>
-                              )}
                             </div>
                           </div>
                           
                           {/* Products List - Scrollable */}
                           <div className="flex-1 min-h-0">
+                            {isInitialQueriesLoading ? (
+                              <div className="flex-1 flex items-center justify-center p-4">
+                                <div className="text-center">
+                                  <Loader2 className="h-6 w-6 animate-spin text-green-500 mx-auto mb-2" />
+                                  <p className="text-xs text-muted-foreground">Loading queries...</p>
+                                </div>
+                              </div>
+                            ) : (
                             <div className="h-full overflow-y-auto p-4 space-y-3">
                               {filteredProducts.map((product) => {
                                 const hasSelectedQueries = getProductSelectedQueriesCount(product.product_id) > 0
@@ -867,11 +892,11 @@ export default function QueriesPage() {
                                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                               ID: {product.product_id}
                                             </p>
-                                            {getProductPrice(product.product_data) && (
+                                            {/* {getProductPrice(product.product_data) && (
                                               <p className="text-xs font-medium text-green-600 dark:text-green-400 mt-1">
                                                 {getProductPrice(product.product_data)}
                                               </p>
-                                            )}
+                                            )} */}
                                             {hasSelectedQueries && (
                                               <p className="text-xs font-medium text-green-600 dark:text-green-400 mt-1">
                                                 {getProductSelectedQueriesCount(product.product_id)} selected
@@ -910,6 +935,7 @@ export default function QueriesPage() {
                                 )
                               })}
                             </div>
+                            )}
                           </div>
                       </div>
 
@@ -924,9 +950,10 @@ export default function QueriesPage() {
                                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
                                   Select a Product
                                 </h3>
-                                <p className="text-gray-500 dark:text-gray-400 max-w-sm">
-                                  Choose a product from the sidebar to view and manage its queries
-                                </p>
+                                <div className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                                  <p className="font-medium mb-1">💡 Query Generation</p>
+                                  <p>Use the "Generate All Queries" button above to create queries for all products, or select specific products in the sidebar for targeted generation.</p>
+                                </div>
                               </div>
                             </div>
                           ) : (
@@ -948,11 +975,11 @@ export default function QueriesPage() {
                                       
                                       {/* Right side product info */}
                                       <div className="flex flex-col items-end gap-1 ml-4">
-                                      {getProductPrice(getSelectedProduct()?.product_data) && (
+                                      {/* {getProductPrice(getSelectedProduct()?.product_data) && (
                                           <p className="text-sm font-medium text-green-600 dark:text-green-400 mt-1">
                                             {getProductPrice(getSelectedProduct()?.product_data)}
                                           </p>
-                                        )}
+                                        )} */}
                                         {getProductRating(getSelectedProduct()?.product_data) && (
                                           <div className="text-sm text-yellow-600 dark:text-yellow-400">
                                             Rating: ⭐ {getProductRating(getSelectedProduct()?.product_data)}
@@ -962,25 +989,26 @@ export default function QueriesPage() {
                                     </div>
                                   </div>
 
-                                  {/* Actions */}
-                                  <div className="flex-shrink-0 ml-4">
-                                    <Button 
-                                      onClick={() => generateQueriesForProduct(selectedProductId)} 
-                                      variant="outline" 
-                                      size="sm"
-                                      disabled={isGeneratingQueries}
-                                    >
-                                      {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                                      Regenerate Queries
-                    </Button>
-                  </div>
+
                                 </div>
                               </div>
 
                               {/* Queries Content - Scrollable */}
                               <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                                 <div className="flex-1 overflow-y-auto p-6">
-                              {isLoadingQueries ? (
+                              {isInitialQueriesLoading ? (
+                                <div className="text-center py-12">
+                                  <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Loader2 className="h-8 w-8 animate-spin text-green-500" />
+                                  </div>
+                                  <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                    Loading Queries
+                                  </h4>
+                                  <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+                                    Fetching queries for all products...
+                                  </p>
+                                </div>
+                              ) : isLoadingQueries ? (
                                 <div className="text-center py-12">
                                   <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -1000,13 +1028,6 @@ export default function QueriesPage() {
                                   <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
                                     No Queries Available
                                   </h4>
-                                  <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
-                                    Generate queries for this product to get started with AI analysis
-                                  </p>
-                                  <Button onClick={() => generateQueriesForProduct(selectedProductId)} disabled={isGeneratingQueries}>
-                        {isGeneratingQueries ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                        Generate Queries
-                      </Button>
                     </div>
                   ) : (
                                                                 <div className="space-y-4">
