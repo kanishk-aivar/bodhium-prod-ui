@@ -49,12 +49,54 @@ export default function QueriesPage() {
   const { toast } = useToast()
   const router = useRouter()
 
+  // Utility: store brand in localStorage
+  const persistSelectedBrand = (brand: string) => {
+    if (brand) localStorage.setItem("selectedBrand", brand)
+    else localStorage.removeItem("selectedBrand")
+  }
+
+  // Run fetchJobs initially, but actual brand restore happens only after brands is set (see brands effect)
   useEffect(() => {
     fetchJobs()
   }, [])
 
+  // Restore selected brand if present in localStorage *and* available in brands
+  useEffect(() => {
+    const storedBrand = localStorage.getItem("selectedBrand")
+    if (brands.length === 0 || !storedBrand) return
+    if (brands.includes(storedBrand)) {
+      setSelectedBrand(storedBrand)
+      setIsLoading(true)
+      // Find latest job for this brand and set it
+      const brandJobs = jobs.filter(job => job.brand_name === storedBrand)
+      setFilteredJobs(brandJobs)
+      if (brandJobs.length > 0) {
+        const latestJob = brandJobs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+        setSelectedJob(latestJob)
+        setIsLoadingProducts(true)
+        fetchProducts(latestJob.job_id).then(() => {
+          setIsLoadingProducts(false)
+          setIsInitialQueriesLoading(true)
+          const allProductIds = products.length
+            ? products.map(p => p.product_id)
+            : []
+          if (allProductIds.length > 0) {
+            checkExistingQueries(latestJob.job_id, allProductIds).finally(() => setIsInitialQueriesLoading(false))
+          } else {
+            setIsInitialQueriesLoading(false)
+          }
+          console.log('Loaded brand from localStorage:', storedBrand)
+        })
+      }
+      setIsLoading(false)
+    }
+    // else: do nothing, dropdown will be shown
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brands])
+
   const resetAllSelections = () => {
     setSelectedBrand("")
+    persistSelectedBrand("")
     setSelectedJob(null)
     setProducts([])
     setSelectedProducts([])
@@ -69,16 +111,15 @@ export default function QueriesPage() {
     setQueriesExist(false)
   }
 
+  // Fetch jobs, also resets main UI
   const fetchJobs = async () => {
     try {
       setIsLoading(true)
       const response = await fetch("/api/jobs")
       const data = await response.json()
-
       if (Array.isArray(data)) {
         const successfulJobs = data.filter((job: ScrapeJob) => job.status === "JOB_SUCCESS")
         setJobs(successfulJobs)
-        
         // Extract unique brands
         const uniqueBrands = Array.from(new Set(
           successfulJobs
@@ -86,20 +127,14 @@ export default function QueriesPage() {
             .filter((brand): brand is string => Boolean(brand))
         )).sort()
         setBrands(uniqueBrands)
-        
-        // Always start with default state - no stored selections
-        setSelectedBrand("")
         setFilteredJobs([])
         setSelectedJob(null)
         setProducts([])
         setSelectedProducts([])
         setQueriesByProduct([])
       } else {
-        console.error("Jobs API returned non-array:", data)
         setJobs([])
         setBrands([])
-        // Reset to default state when no jobs
-        setSelectedBrand("")
         setFilteredJobs([])
         setSelectedJob(null)
         setProducts([])
@@ -112,11 +147,8 @@ export default function QueriesPage() {
         })
       }
     } catch (error) {
-      console.error("Error fetching jobs:", error)
       setJobs([])
       setBrands([])
-      // Reset to default state on error
-      setSelectedBrand("")
       setFilteredJobs([])
       setSelectedJob(null)
       setProducts([])
@@ -138,8 +170,6 @@ export default function QueriesPage() {
       const response = await fetch(`/api/products/${jobId}`)
       const data = await response.json()
       setProducts(data)
-      
-      // Automatically load queries for all products after products are fetched
       if (data && data.length > 0) {
         setIsInitialQueriesLoading(true)
         try {
@@ -161,8 +191,10 @@ export default function QueriesPage() {
     }
   }
 
+  // Handles UI, triggers api, and persists selection
   const handleBrandSelect = (brand: string) => {
     setSelectedBrand(brand)
+    persistSelectedBrand(brand)
     setSelectedJob(null)
     setProducts([])
     setSelectedProducts([])
@@ -171,20 +203,16 @@ export default function QueriesPage() {
     setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
-    
-    // Reset new UI state
     setSelectedProductId(null)
     setProductSearchTerm("")
-    
     // Filter jobs by selected brand
     const brandJobs = jobs.filter(job => job.brand_name === brand)
     setFilteredJobs(brandJobs)
-    
-    // Automatically select the latest job (most recent by created_at)
     if (brandJobs.length > 0) {
       const latestJob = brandJobs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       setSelectedJob(latestJob)
-      fetchProducts(latestJob.job_id)
+      setIsLoadingProducts(true)
+      fetchProducts(latestJob.job_id).then(() => setIsLoadingProducts(false))
     }
   }
 
@@ -196,17 +224,13 @@ export default function QueriesPage() {
     setSelectedCustomQueries([])
     setNewQueries([])
     setQueriesExist(false)
-    
-    // Reset new UI state
     setSelectedProductId(null)
     setProductSearchTerm("")
-    
     fetchProducts(job.job_id)
   }
 
   const handleProductSelectionChange = (newSelection: number[]) => {
     setSelectedProducts(newSelection)
-    // Clear queries when products change
     setQueriesByProduct([])
     setSelectedQueries([])
     setSelectedCustomQueries([])
@@ -214,12 +238,9 @@ export default function QueriesPage() {
     setQueriesExist(false)
   }
 
-  // New handlers for the redesigned UI
+  // New handlers for redesigned UI
   const handleProductClick = async (productId: number) => {
     setSelectedProductId(productId)
-    
-    // Don't clear selections - maintain common query list across products
-    // Load queries for all products if not already loaded
     if (selectedJob && queriesByProduct.length === 0) {
       const allProductIds = products.map(p => p.product_id)
       await checkExistingQueries(selectedJob.job_id, allProductIds)
@@ -228,18 +249,14 @@ export default function QueriesPage() {
 
   const refreshCurrentProductQueries = async () => {
     if (!selectedJob) return
-    
     setIsRefreshingQueries(true)
     try {
-      // Refresh queries for all products to maintain common list
       const allProductIds = products.map(p => p.product_id)
       await checkExistingQueries(selectedJob.job_id, allProductIds)
     } finally {
       setIsRefreshingQueries(false)
     }
   }
-
-
 
   const submitProductSelection = async () => {
     if (selectedProducts.length === 0) {
@@ -277,7 +294,6 @@ export default function QueriesPage() {
         body: JSON.stringify({ product_ids: productIds }),
       })
       const data = await response.json()
-
       if (Array.isArray(data) && data.length > 0) {
         setQueriesByProduct(data)
         setQueriesExist(true)
@@ -285,9 +301,7 @@ export default function QueriesPage() {
         setQueriesByProduct([])
         setQueriesExist(false)
       }
-      // Don't clear newQueries here to preserve custom queries
     } catch (error) {
-      console.error("Error checking queries:", error)
       setQueriesByProduct([])
       setQueriesExist(false)
     } finally {
@@ -297,7 +311,6 @@ export default function QueriesPage() {
 
   const generateQueries = async () => {
     if (!selectedJob) return
-
     setIsGeneratingQueries(true)
     try {
       const response = await fetch("/api/generate-queries", {
@@ -308,14 +321,11 @@ export default function QueriesPage() {
           product_ids: selectedProducts,
         }),
       })
-
       if (response.ok) {
         toast({
           title: "Success",
           description: "Query generation started!",
         })
-
-        // Poll for generated queries
         setTimeout(() => {
           checkExistingQueries(selectedJob.job_id, selectedProducts)
         }, 3000)
@@ -335,11 +345,8 @@ export default function QueriesPage() {
 
   const addCustomQuery = () => {
     if (!customQuery.trim()) return
-
-    // Add to new queries array
-    setNewQueries((prev) => [...prev, customQuery.trim()])
+    setNewQueries(prev => [...prev, customQuery.trim()])
     setCustomQuery("")
-
     toast({
       title: "Query Added",
       description: "Custom query has been added to your selection.",
@@ -363,23 +370,17 @@ export default function QueriesPage() {
 
     if (!selectedJob) return
 
-    // Get all products that have selected queries
     const productsWithSelectedQueries = new Set<number>()
-    
-    // Add products from selected existing queries
     selectedQueries.forEach(queryId => {
       const query = allQueries.find(q => q.query_id === queryId)
       if (query && query.product_id) {
         productsWithSelectedQueries.add(query.product_id)
       }
     })
-    
-    // If we have custom queries, use the currently selected product or all products
     if (selectedCustomQueriesText.length > 0) {
       if (selectedProductId) {
         productsWithSelectedQueries.add(selectedProductId)
       } else {
-        // If no specific product selected, use all products
         products.forEach(p => productsWithSelectedQueries.add(p.product_id))
       }
     }
@@ -396,7 +397,6 @@ export default function QueriesPage() {
           selected_products: Array.from(productsWithSelectedQueries),
         }),
       })
-
       if (response.ok) {
         const result = await response.json()
         toast({
@@ -418,14 +418,13 @@ export default function QueriesPage() {
     }
   }
 
-  // Get all queries from all products for processing
+  // Queries for processing
   const allQueries = queriesByProduct.flatMap(pq => pq.queries)
 
-  // Helper function to get product name by ID
+  // Helpers for product display
   const getProductName = (productId: number) => {
     const product = products.find(p => p.product_id === productId)
     if (product && product.product_data) {
-      // Use the same logic as ProductSelector component
       let productData = product.product_data
       if (typeof productData === "string") {
         try {
@@ -434,25 +433,11 @@ export default function QueriesPage() {
           return `Product ${productId}`
         }
       }
-      // Use productname instead of name (as per ProductSelector logic)
       return productData?.productname || productData?.name || productData?.title || `Product ${productId}`
     }
     return `Product ${productId}`
   }
 
-  // // Helper function to get product price
-  // const getProductPrice = (productData: any) => {
-  //   if (typeof productData === "string") {
-  //     try {
-  //       productData = JSON.parse(productData)
-  //     } catch {
-  //       return null
-  //     }
-  //   }
-  //   return productData?.price || productData?.cost || productData?.current_price || null
-  // }
-
-  // Helper function to get product image
   const getProductImage = (productData: any) => {
     if (typeof productData === "string") {
       try {
@@ -463,8 +448,6 @@ export default function QueriesPage() {
     }
     return productData?.image || productData?.image_url || productData?.thumbnail || productData?.photo || null
   }
-
-  // Helper function to get product rating
   const getProductRating = (productData: any) => {
     if (typeof productData === "string") {
       try {
@@ -477,31 +460,12 @@ export default function QueriesPage() {
     if (!rating || String(rating).toLowerCase() === "n/a") return null
     return String(rating)
   }
-
-  // Helper function to get product brand
-  const getProductBrand = (productData: any) => {
-    if (typeof productData === "string") {
-      try {
-        productData = JSON.parse(productData)
-      } catch {
-        return null
-      }
-    }
-    return productData?.brand || productData?.manufacturer || productData?.company || null
-  }
-
-  // Helper function to get selected product
-  const getSelectedProduct = () => {
-    return selectedProductId ? products.find(p => p.product_id === selectedProductId) : null
-  }
-
-  // Helper function to count selected queries for a product
+  const getSelectedProduct = () =>
+    selectedProductId ? products.find(p => p.product_id === selectedProductId) : null
   const getProductSelectedQueriesCount = (productId: number) => {
     const productQueries = queriesByProduct.find(pq => pq.product_id === productId)?.queries || []
     return productQueries.filter(query => selectedQueries.includes(query.query_id)).length
   }
-
-  // Helper function to toggle accordion sections
   const toggleQueryType = (queryType: string) => {
     setExpandedQueryTypes(prev => {
       const newSet = new Set(prev)
@@ -513,33 +477,20 @@ export default function QueriesPage() {
       return newSet
     })
   }
-
-  // Helper function to toggle product selection for batch operations
   const toggleProductForBatch = (productId: number) => {
-    setSelectedProductsForBatch(prev => 
-      prev.includes(productId) 
+    setSelectedProductsForBatch(prev =>
+      prev.includes(productId)
         ? prev.filter(id => id !== productId)
         : [...prev, productId]
     )
   }
-
-  // Helper function to select all products for batch
-  const selectAllProductsForBatch = () => {
-    setSelectedProductsForBatch(products.map(p => p.product_id))
-  }
-
-  // Helper function to clear all product selections for batch
-  const clearAllProductsForBatch = () => {
-    setSelectedProductsForBatch([])
-  }
-
-  // Helper function to generate queries for selected products in batch
+  const selectAllProductsForBatch = () => setSelectedProductsForBatch(products.map(p => p.product_id))
+  const clearAllProductsForBatch = () => setSelectedProductsForBatch([])
   const generateQueriesForBatch = async () => {
     if (!selectedJob) return
-
-    // If no products are selected for batch, use all products
-    const productIdsToUse = selectedProductsForBatch.length > 0 ? selectedProductsForBatch : products.map(p => p.product_id)
-    
+    const productIdsToUse = selectedProductsForBatch.length > 0
+      ? selectedProductsForBatch
+      : products.map(p => p.product_id)
     if (productIdsToUse.length === 0) {
       toast({
         title: "Error",
@@ -548,7 +499,6 @@ export default function QueriesPage() {
       })
       return
     }
-
     setIsGeneratingQueries(true)
     try {
       const response = await fetch("/api/generate-queries", {
@@ -559,20 +509,15 @@ export default function QueriesPage() {
           product_ids: productIdsToUse,
         }),
       })
-
       if (response.ok) {
         toast({
           title: "Success",
           description: `Batch query generation started for ${productIdsToUse.length} products!`,
         })
-
-        // Poll for generated queries
         setTimeout(() => {
           const allProductIds = products.map(p => p.product_id)
           checkExistingQueries(selectedJob.job_id, allProductIds)
         }, 3000)
-        
-        // Clear batch selection
         setSelectedProductsForBatch([])
       } else {
         throw new Error("Failed to generate queries")
@@ -587,37 +532,47 @@ export default function QueriesPage() {
       setIsGeneratingQueries(false)
     }
   }
-
-  // Filtered products based on search term
   const filteredProducts = products.filter(product => {
     if (!productSearchTerm) return true
     const productName = getProductName(product.product_id).toLowerCase()
-    return productName.includes(productSearchTerm.toLowerCase()) || 
+    return productName.includes(productSearchTerm.toLowerCase()) ||
            product.product_id.toString().includes(productSearchTerm)
   })
 
-  // Get queries for the currently selected product
-  const currentProductQueries = selectedProductId 
+  const currentProductQueries = selectedProductId
     ? queriesByProduct.find(pq => pq.product_id === selectedProductId)?.queries || []
     : []
 
-  // Helper function to format query type titles
-  const formatQueryTypeTitle = (type: string) => {
-    return type
-      .split('_') // Split by underscore
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize first letter of each word
-      .join(' ') // Join with spaces
-      + ' Queries' // Add "Queries" suffix
-  }
+  const formatQueryTypeTitle = (type: string) =>
+    type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') + ' Queries'
 
   // Convert custom queries to Query objects for consistent handling
   const customQueriesAsObjects: Query[] = newQueries.map((queryText, index) => ({
     query_id: -(index + 1), // Use negative IDs to avoid conflicts with existing queries
     product_id: null,
     query_text: queryText,
-    query_type: 'custom',
+    query_type: "custom",
     is_active: true,
   }))
+
+  // -- CONDITIONAL INITIAL DROPDOWN: Only show dropdown if not loading and no selected brand --
+  if (!isLoading && !selectedBrand) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-8">
+        <div className="text-2xl font-semibold text-gray-800 mb-4">Select a brand to continue</div>
+        <select
+          value={selectedBrand}
+          onChange={e => handleBrandSelect(e.target.value)}
+          className="h-10 px-3 rounded-lg bg-white/60 border border-gray-200 min-w-52 text-lg"
+        >
+          <option value="">Select a brand...</option>
+          {brands.map((brand) => (
+            <option key={brand} value={brand}>{brand}</option>
+          ))}
+        </select>
+      </div>
+    )
+  }
 
   if (isLoading) {
     return (
@@ -630,26 +585,27 @@ export default function QueriesPage() {
     )
   }
 
+  // Else, show full UI
   return (
     <div className="h-screen flex flex-col">
-        <div className="px-6 md:px-8 py-6 border-b border-gray-200 dark:border-gray-700">
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
-            Select Products & Queries
-          </h1>
-          <p className="text-muted-foreground text-sm">Choose products and create queries for AI analysis</p>
-        </div>
-        
-        <div className="flex-1 overflow-hidden px-6 md:px-8">{/* This will contain all the scrollable content */}
+      {/* HEADER */}
+      <div className="px-6 md:px-8 py-6 border-b border-gray-200 dark:border-gray-700">
+        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2 bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--accent))] bg-clip-text text-transparent">
+          Select Products & Queries
+        </h1>
+        <p className="text-muted-foreground text-sm">Choose products and create queries for AI analysis</p>
+      </div>
 
+      <div className="flex-1 overflow-hidden px-6 md:px-8">
         {brands.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
-          <Card className="bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
-            <CardContent className="p-8 text-center">
-              <p className="text-muted-foreground mb-4">No successful jobs found. Please submit a URL first.</p>
-              <p className="text-sm text-muted-foreground">Please submit a URL on the Home page to get started.</p>
-            </CardContent>
-          </Card>
-                </div>
+            <Card className="bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50 border border-white/60 shadow-lg dark:bg-white/5 dark:border-white/10">
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground mb-4">No successful jobs found. Please submit a URL first.</p>
+                <p className="text-sm text-muted-foreground">Please submit a URL on the Home page to get started.</p>
+              </CardContent>
+            </Card>
+          </div>
         ) : (
           <div className="flex flex-col h-full">
             {/* Combined Product & Query Selection - Takes full height */}
