@@ -96,6 +96,7 @@ export interface NewResultsResponse {
 export interface RDSTaskResult {
   task_id: string
   job_id: string | null
+  session_id: string | null
   query_id: number | null
   llm_model_name: string | null
   status: string | null

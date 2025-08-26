@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 interface LLMTaskResult {
   task_id: string
   job_id: string | null
+  session_id: string | null
   query_id: number | null
   llm_model_name: string | null
   status: string | null
@@ -28,6 +29,7 @@ export async function GET() {
       SELECT 
         t.task_id,
         t.job_id,
+        t.session_id,
         t.query_id,
         t.llm_model_name,
         t.status,
@@ -75,6 +77,7 @@ export async function GET() {
       return {
         task_id: record.task_id,
         job_id: record.job_id,
+        session_id: record.session_id,
         query_id: record.query_id,
         llm_model_name: record.llm_model_name,
         status: record.status,
