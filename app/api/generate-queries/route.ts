@@ -24,8 +24,8 @@ export async function POST(request: NextRequest) {
     // Submit job to AWS Batch
     const submitJobCommand = new SubmitJobCommand({
       jobName: batchJobId,
-      jobQueue: "dev-query-gen-queue",
-      jobDefinition: "dev-QueryGen-definition:2",
+      jobQueue: process.env.BATCH_QUEUE_QUERY_GENERATOR,
+      jobDefinition: process.env.BATCH_DEFINITION_QUERY_GENERATOR,
       containerOverrides: {
         environment: [
           {
@@ -54,8 +54,8 @@ export async function POST(request: NextRequest) {
 
     console.log("Submitting AWS Batch job:", {
       jobName: batchJobId,
-      jobQueue: "dev-query-gen-queue",
-      jobDefinition: "dev-QueryGen-definition:2",
+      jobQueue: process.env.BATCH_QUEUE_QUERY_GENERATOR,
+      jobDefinition: process.env.BATCH_DEFINITION_QUERY_GENERATOR,
       environment: {
         JOB_ID: job_id,
         NUM_QUESTIONS: "25",

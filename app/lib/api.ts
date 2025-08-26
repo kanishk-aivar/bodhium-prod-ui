@@ -99,12 +99,12 @@ export function createErrorResponse(message: string, status = 500) {
 }
 
 // S3 Helper Functions for new bucket structure
-const NEW_S3_BUCKET = "bodhium-temp"
+const S3_JOBS_OUTPUT = process.env.S3_JOBS_OUTPUT
 
 export async function listS3Objects(prefix: string) {
   try {
     const command = new ListObjectsV2Command({
-      Bucket: NEW_S3_BUCKET,
+      Bucket: S3_JOBS_OUTPUT,
       Prefix: prefix,
     })
     
@@ -118,10 +118,10 @@ export async function listS3Objects(prefix: string) {
 
 export async function getS3Object(s3Path: string) {
   try {
-    // Strip s3://bodhium-temp/ prefix if present
+    // Strip s3://{bucket_name}/ prefix if present
     let key = s3Path
-    if (s3Path.startsWith('s3://bodhium-temp/')) {
-      key = s3Path.replace('s3://bodhium-temp/', '')
+    if (s3Path.startsWith(`s3://${S3_JOBS_OUTPUT}/`)) {
+      key = s3Path.replace(`s3://${S3_JOBS_OUTPUT}/`, '')
     } else if (s3Path.startsWith('s3://')) {
       // Handle other S3 URI formats
       const parts = s3Path.replace('s3://', '').split('/')
@@ -130,10 +130,10 @@ export async function getS3Object(s3Path: string) {
       }
     }
 
-    console.log(`Fetching S3 object with key: ${key} from bucket: ${NEW_S3_BUCKET}`)
+    console.log(`Fetching S3 object with key: ${key} from bucket: ${S3_JOBS_OUTPUT}`)
     
     const command = new GetObjectCommand({
-      Bucket: NEW_S3_BUCKET,
+      Bucket: S3_JOBS_OUTPUT,
       Key: key,
     })
     

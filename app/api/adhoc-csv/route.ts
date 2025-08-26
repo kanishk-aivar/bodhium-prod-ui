@@ -11,7 +11,7 @@ const s3Client = new S3Client({
 })
 
 const LAMBDA_ARN = process.env.LAMBDA_LLM_ADHOC_ORCHESTRATOR_ARN
-const S3_BUCKET = 'bodhium-adhoc-upload-jobs-output'
+const S3_ADHOC_DOWNLOAD_BUCKET = process.env.S3_ADHOC_DOWNLOAD_BUCKET
 
 interface LambdaResponse {
   status: string
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 
       // Get the CSV file from S3
       const s3Command = new GetObjectCommand({
-        Bucket: S3_BUCKET,
+        Bucket: S3_ADHOC_DOWNLOAD_BUCKET,
         Key: s3Key,
       })
 

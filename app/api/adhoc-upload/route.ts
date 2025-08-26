@@ -5,7 +5,7 @@ const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
 })
 
-const S3_UPLOAD_BUCKET = 'bodhium-adhoc-upload-trigger'
+const S3_UPLOAD_BUCKET = process.env.S3_ADHOC_UPLOAD_BUCKET
 
 // JSON Schema validation function
 function validateJsonSchema(jsonData: any): { valid: boolean; error?: string } {

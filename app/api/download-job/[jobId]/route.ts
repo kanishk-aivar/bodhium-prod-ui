@@ -8,7 +8,7 @@ const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",
 })
 
-const NEW_S3_BUCKET = "bodhium-temp"
+const S3_JOBS_OUTPUT = process.env.S3_JOBS_OUTPUT
 
 export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
   try {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { jobId: s
       if (object.Key && !object.Key.endsWith("/")) {
         try {
           const getCommand = new GetObjectCommand({
-            Bucket: NEW_S3_BUCKET,
+            Bucket: S3_JOBS_OUTPUT,
             Key: object.Key,
           })
 

@@ -22,7 +22,6 @@ import {
   FileText,
   Timer,
   Package,
-  Globe,
 } from "lucide-react"
 import { useToast } from "./hooks/use-toast"
 import type { ScrapeJob } from "./lib/types"
@@ -139,11 +138,7 @@ export default function HomePage() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           brand_name: brandName.trim() || new URL(brandUrl).hostname,
-          progress: {
-            urls_collected: 0,
-            urls_visited: 0,
-            products_scraped: 0,
-          },
+          product_count: 0,
         }
 
         setJobs((prev) => [newJob, ...prev])
@@ -648,76 +643,9 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* Active Job Progress */}
-                    {job.progress && (job.status === "JOB_RUNNING" || job.status === "SUBMITTED") && (
-                      <div className="space-y-4">
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="text-center p-4 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <Package className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
-                                Products
-                              </span>
-                            </div>
-                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                              {job.progress.products_scraped}
-                            </div>
-                          </div>
-
-                          <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl border border-blue-200 dark:border-blue-800">
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <Globe className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                              <span className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">
-                                URLs
-                              </span>
-                            </div>
-                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                              {job.progress.urls_visited}/{job.progress.urls_collected}
-                            </div>
-                          </div>
-
-                          <div className="text-center p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <Timer className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                              <span className="text-xs font-medium text-amber-700 dark:text-amber-300 uppercase tracking-wide">
-                                Elapsed
-                              </span>
-                            </div>
-                            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-                              {formatElapsedTime(job.created_at)}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                              Crawling Progress
-                            </span>
-                            <span className="text-sm text-muted-foreground">
-                              {Math.round((job.progress.urls_visited / Math.max(job.progress.urls_collected, 1)) * 100)}
-                              %
-                            </span>
-                          </div>
-
-                          <div className="relative h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000 ease-out relative"
-                              style={{
-                                width: `${Math.min((job.progress.urls_visited / Math.max(job.progress.urls_collected, 1)) * 100, 100)}%`,
-                              }}
-                            >
-                              <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Completed Job Summary */}
-                    {job.progress && (job.status === "JOB_SUCCESS" || job.status === "llm_generated") && (
+                    {/* Job Statistics */}
+                    <div className="space-y-4">
+                      {/* Stats Grid */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="text-center p-4 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
                           <div className="flex items-center justify-center gap-2 mb-2">
@@ -727,7 +655,7 @@ export default function HomePage() {
                             </span>
                           </div>
                           <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                            {job.progress.products_scraped}
+                            {job.product_count || 0}
                           </div>
                         </div>
 
@@ -735,15 +663,18 @@ export default function HomePage() {
                           <div className="flex items-center justify-center gap-2 mb-2">
                             <Timer className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                             <span className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">
-                              Total Time
+                              {job.status === "JOB_SUCCESS" || job.status === "llm_generated" ? "Total Time" : "Elapsed Time"}
                             </span>
                           </div>
                           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                            {formatElapsedTime(job.created_at, job.updated_at)}
+                            {job.status === "JOB_SUCCESS" || job.status === "llm_generated" 
+                              ? formatElapsedTime(job.created_at, job.updated_at)
+                              : formatElapsedTime(job.created_at)
+                            }
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 ))
               ) : (
