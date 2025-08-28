@@ -115,6 +115,10 @@ export interface RDSTaskResult {
 export interface RDSResultsResponse {
   tasks: RDSTaskResult[]
   total_count: number
+  current_page: number
+  total_pages: number
+  has_next: boolean
+  has_previous: boolean
 }
 
 export interface TaskContentResponse extends RDSTaskResult {

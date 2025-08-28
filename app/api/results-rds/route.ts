@@ -23,9 +23,77 @@ interface LLMTaskResult {
   product_data: any
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const records = await executeQuery(`
+    const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '30')
+    const search = searchParams.get('search') || ''
+    const brand = searchParams.get('brand') || ''
+    const status = searchParams.get('status') || ''
+    const model = searchParams.get('model') || ''
+    const sessionId = searchParams.get('sessionId') || ''
+    
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit
+    
+    // Build WHERE clause based on filters
+    let whereConditions = ['t.task_id IS NOT NULL']
+    let queryParams: any[] = []
+    let paramIndex = 1
+    
+    if (search) {
+      whereConditions.push(`(
+        LOWER(t.product_name) LIKE LOWER($${paramIndex}) OR 
+        LOWER(q.query_text) LIKE LOWER($${paramIndex}) OR 
+        LOWER(t.llm_model_name) LIKE LOWER($${paramIndex}) OR
+        LOWER(p.brand_name) LIKE LOWER($${paramIndex})
+      )`)
+      queryParams.push(`%${search}%`)
+      paramIndex++
+    }
+    
+    if (brand && brand !== 'all') {
+      whereConditions.push(`p.brand_name = $${paramIndex}`)
+      queryParams.push(brand)
+      paramIndex++
+    }
+    
+    if (status && status !== 'all') {
+      whereConditions.push(`t.status = $${paramIndex}`)
+      queryParams.push(status)
+      paramIndex++
+    }
+    
+    if (model && model !== 'all') {
+      whereConditions.push(`t.llm_model_name = $${paramIndex}`)
+      queryParams.push(model)
+      paramIndex++
+    }
+    
+    if (sessionId && sessionId !== 'all') {
+      whereConditions.push(`t.session_id = $${paramIndex}`)
+      queryParams.push(sessionId)
+      paramIndex++
+    }
+    
+    const whereClause = whereConditions.join(' AND ')
+    
+    // Get total count for pagination
+    const countQuery = `
+      SELECT COUNT(*) as total_count
+      FROM llmtasks t
+      LEFT JOIN queries q ON t.query_id = q.query_id
+      LEFT JOIN products p ON t.product_id = p.product_id
+      LEFT JOIN scrapejobs j ON t.job_id = j.job_id
+      WHERE ${whereClause}
+    `
+    
+    const countResult = await executeQuery(countQuery, queryParams)
+    const totalCount = (countResult as any[])[0]?.total_count || 0
+    
+    // Get paginated results
+    const dataQuery = `
       SELECT 
         t.task_id,
         t.job_id,
@@ -48,9 +116,15 @@ export async function GET() {
       LEFT JOIN queries q ON t.query_id = q.query_id
       LEFT JOIN products p ON t.product_id = p.product_id
       LEFT JOIN scrapejobs j ON t.job_id = j.job_id
-      WHERE t.task_id IS NOT NULL
+      WHERE ${whereClause}
       ORDER BY t.created_at DESC
-    `)
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `
+    
+    // Add pagination parameters
+    queryParams.push(limit, offset)
+    
+    const records = await executeQuery(dataQuery, queryParams)
 
     const results = (records as any[]).map((record) => {
       // Extract product name from product_data if not available in product_name column
@@ -96,7 +170,11 @@ export async function GET() {
 
     return createApiResponse({
       tasks: results,
-      total_count: results.length
+      total_count: totalCount,
+      current_page: page,
+      total_pages: Math.ceil(totalCount / limit),
+      has_next: page * limit < totalCount,
+      has_previous: page > 1
     })
   } catch (error) {
     console.error("Results RDS API error:", error)

@@ -32,6 +32,7 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Search,
 } from "lucide-react"
 
 interface TaskRow {
@@ -49,7 +50,14 @@ interface TaskRow {
 }
 
 export default function ResultsPage() {
-  const [results, setResults] = useState<RDSResultsResponse>({ tasks: [], total_count: 0 })
+  const [results, setResults] = useState<RDSResultsResponse>({ 
+    tasks: [], 
+    total_count: 0, 
+    current_page: 1, 
+    total_pages: 1, 
+    has_next: false, 
+    has_previous: false 
+  })
   const [tableData, setTableData] = useState<TaskRow[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [brandFilter, setBrandFilter] = useState<string>("all")
@@ -58,7 +66,16 @@ export default function ResultsPage() {
   const [sessionIdFilter, setSessionIdFilter] = useState<string>("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
+  const [tableLoading, setTableLoading] = useState(false)
   const [selectedTask, setSelectedTask] = useState<RDSTaskResult | null>(null)
+
+  // Filter options state - independent of current results
+  const [filterOptions, setFilterOptions] = useState({
+    brands: [] as string[],
+    statuses: [] as string[],
+    models: [] as string[]
+  })
+  const [filterOptionsLoading, setFilterOptionsLoading] = useState(false)
 
   // Job download state
   const [jobs, setJobs] = useState<ScrapeJob[]>([])
@@ -89,17 +106,48 @@ export default function ResultsPage() {
   const { toast } = useToast()
 
   useEffect(() => {
-    fetchResults()
-    fetchJobs()
-    fetchSessions()
+    const initializePage = async () => {
+      try {
+        setIsLoading(true)
+        console.log("Starting page initialization...")
+        try {
+          await Promise.all([
+            fetchResults(1),
+            fetchJobs(),
+            fetchSessions(),
+            fetchFilterOptions()
+          ])
+          console.log("Page initialization complete, setting isLoading to false")
+          setIsLoading(false)
+        } catch (error) {
+          console.error("Error in Promise.all:", error)
+          setIsLoading(false)
+        }
+      } catch (error) {
+        console.error("Error initializing page:", error)
+        setIsLoading(false)
+      }
+    }
+    
+    initializePage()
   }, [])
 
-  // Fetch sessions when component mounts or when brand filter changes
+
+
+  // Fetch results when filters change (excluding search term)
   useEffect(() => {
-    fetchSessions()
+    fetchResults(1)
+  }, [brandFilter, statusFilter, modelFilter, sessionIdFilter])
+
+  // Refresh filter options when brand filter changes (for sessions)
+  useEffect(() => {
+    if (brandFilter !== 'all') {
+      fetchSessions()
+    }
   }, [brandFilter])
 
   useEffect(() => {
+    console.log("Results changed:", results)
     // Transform tasks data into table rows
     const rows: TaskRow[] = results.tasks.map((task) => ({
       id: task.task_id,
@@ -115,22 +163,60 @@ export default function ResultsPage() {
       task: task,
     }))
 
+    console.log("Setting table data:", rows.length, "rows")
     setTableData(rows)
   }, [results])
 
-  const fetchResults = async () => {
+  const fetchResults = async (page: number = 1) => {
     try {
-      const response = await fetch("/api/results-rds")
+      setTableLoading(true)
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: ROWS_PER_PAGE.toString()
+      })
+      
+      if (searchTerm) params.append('search', searchTerm)
+      if (brandFilter !== 'all') params.append('brand', brandFilter)
+      if (statusFilter !== 'all') params.append('status', statusFilter)
+      if (modelFilter !== 'all') params.append('model', modelFilter)
+      if (sessionIdFilter !== 'all') params.append('sessionId', sessionIdFilter)
+      
+      const response = await fetch(`/api/results-rds?${params.toString()}`)
       const data = await response.json()
+      console.log("Results fetched:", data)
       setResults(data)
-      setIsLoading(false)
+      setCurrentPage(page)
+      // Clear task selection when fetching new results
+      setSelectedFailedTasks(new Set())
+      setTableLoading(false)
+      return data
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to fetch results",
         variant: "destructive",
       })
-      setIsLoading(false)
+      setTableLoading(false)
+      throw error
+    }
+  }
+
+  const fetchFilterOptions = async () => {
+    try {
+      setFilterOptionsLoading(true)
+      const response = await fetch('/api/results-rds/filter-options')
+      const data = await response.json()
+      setFilterOptions(data)
+      return data
+    } catch (error) {
+      console.error("Error fetching filter options:", error)
+      // Fallback to empty arrays if API fails
+      setFilterOptions({ brands: [], statuses: [], models: [] })
+      throw error
+    } finally {
+      setFilterOptionsLoading(false)
     }
   }
 
@@ -143,7 +229,8 @@ export default function ResultsPage() {
       if (Array.isArray(data)) {
         setJobs(data)
         // Check S3 data for all jobs
-        checkJobsS3Data(data)
+        await checkJobsS3Data(data)
+        return data
       } else {
         console.error("Jobs API returned non-array:", data)
         setJobs([])
@@ -152,6 +239,7 @@ export default function ResultsPage() {
           description: "Failed to load jobs for download",
           variant: "destructive",
         })
+        return []
       }
     } catch (error) {
       console.error("Error fetching jobs:", error)
@@ -161,6 +249,7 @@ export default function ResultsPage() {
         description: "Failed to fetch jobs for download",
         variant: "destructive",
       })
+      throw error
     } finally {
       setJobsLoading(false)
     }
@@ -173,6 +262,7 @@ export default function ResultsPage() {
       const response = await fetch(`/api/sessions${brandParam}`)
       const data = await response.json()
       setSessions(data)
+      return data
     } catch (error) {
       console.error("Error fetching sessions:", error)
       setSessions([])
@@ -181,6 +271,7 @@ export default function ResultsPage() {
         description: "Failed to fetch sessions",
         variant: "destructive",
       })
+      throw error
     } finally {
       setSessionsLoading(false)
     }
@@ -251,7 +342,7 @@ export default function ResultsPage() {
           title: "Success",
           description: "Task retry initiated successfully!",
         })
-        setTimeout(() => fetchResults(), 1000)
+        setTimeout(() => fetchResults(currentPage), 1000)
       } else {
         const errorData = await response.json()
         throw new Error(errorData.error || "Failed to retry task")
@@ -322,7 +413,7 @@ export default function ResultsPage() {
         })
 
         setSelectedFailedTasks(new Set())
-        setTimeout(() => fetchResults(), 1000)
+        setTimeout(() => fetchResults(currentPage), 1000)
       } else {
         const errorData = await response.json()
         throw new Error(errorData.error || "Failed to retry tasks")
@@ -349,12 +440,12 @@ export default function ResultsPage() {
       return
     }
 
-    const selectedTasks = filteredData.filter((row) => selectedFailedTasks.has(row.id))
+    const selectedTasks = tableData.filter((row) => selectedFailedTasks.has(row.id))
     initiateRetry("bulk", selectedTasks, `${selectedTasks.length} selected failed tasks`)
   }
 
   const retryAllFailedByModel = (model: string) => {
-    const failedTasks = filteredData.filter((row) => row.status === "failed" && row.llmModel === model)
+    const failedTasks = tableData.filter((row) => row.status === "failed" && row.llmModel === model)
     if (failedTasks.length === 0) {
       toast({
         title: "No Failed Tasks",
@@ -367,13 +458,8 @@ export default function ResultsPage() {
   }
 
   const retryAllFailedByBrand = (brand: string) => {
-    const failedTasks = filteredData.filter((row) => row.status === "failed" && row.brand === brand)
+    const failedTasks = tableData.filter((row) => row.status === "failed" && row.brand === brand)
     if (failedTasks.length === 0) {
-      toast({
-        title: "No Failed Tasks",
-        description: `No failed tasks found for brand ${brand}`,
-        variant: "destructive",
-      })
       return
     }
     initiateRetry("filter", failedTasks, `all failed tasks from brand ${brand} (${failedTasks.length} tasks)`)
@@ -462,11 +548,11 @@ export default function ResultsPage() {
   }
 
   const getFailedTasksCount = () => {
-    return filteredData.filter((row) => row.status === "failed").length
+    return tableData.filter((row) => row.status === "failed").length
   }
 
   const getSelectedFailedTasksData = () => {
-    return filteredData
+    return tableData
       .filter((row) => selectedFailedTasks.has(row.id) && row.status === "failed")
       .map((row) => {
         // Map AI model names to supported model values
@@ -514,7 +600,7 @@ export default function ResultsPage() {
   }
 
   const selectAllFailedTasks = () => {
-    const failedTaskIds = filteredData.filter((row) => row.status === "failed").map((row) => row.id)
+    const failedTaskIds = tableData.filter((row) => row.status === "failed").map((row) => row.id)
     setSelectedFailedTasks(new Set(failedTaskIds))
   }
 
@@ -522,38 +608,15 @@ export default function ResultsPage() {
     setSelectedFailedTasks(new Set())
   }
 
-  const filteredData = tableData.filter((row) => {
-    const searchLower = searchTerm.toLowerCase()
-    const matchesSearch =
-      row.brand.toLowerCase().includes(searchLower) ||
-      row.productName.toLowerCase().includes(searchLower) ||
-      row.query.toLowerCase().includes(searchLower) ||
-      row.llmModel.toLowerCase().includes(searchLower) ||
-      row.jobId.toLowerCase().includes(searchLower)
-
-    const matchesBrand = brandFilter === "all" || row.brand === brandFilter
-    const matchesStatus = statusFilter === "all" || row.status === statusFilter
-    const matchesModel = modelFilter === "all" || row.llmModel === modelFilter
-    const matchesSessionId = sessionIdFilter === "all" || row.sessionId === sessionIdFilter
-
-    return matchesSearch && matchesBrand && matchesStatus && matchesModel && matchesSessionId
-  })
-
   // Pagination logic
-  const totalPages = Math.ceil(filteredData.length / ROWS_PER_PAGE)
-  const startIndex = (currentPage - 1) * ROWS_PER_PAGE
-  const endIndex = startIndex + ROWS_PER_PAGE
-  const paginatedData = filteredData.slice(startIndex, endIndex)
+  const totalPages = results.total_pages || 1
 
-  // Get unique values for filters
-  const uniqueBrands = Array.from(new Set(tableData.map((row) => row.brand))).sort()
-  const uniqueStatuses = Array.from(new Set(tableData.map((row) => row.status))).sort()
-  const uniqueModels = Array.from(new Set(tableData.map((row) => row.llmModel))).sort()
+  // Get unique values for filters from filter options, with fallback to current data
+  const uniqueBrands = filterOptions.brands.length > 0 ? filterOptions.brands : Array.from(new Set(tableData.map((row) => row.brand))).sort()
+  const uniqueStatuses = filterOptions.statuses.length > 0 ? filterOptions.statuses : Array.from(new Set(tableData.map((row) => row.status))).sort()
+  const uniqueModels = filterOptions.models.length > 0 ? filterOptions.models : Array.from(new Set(tableData.map((row) => row.llmModel))).sort()
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [searchTerm, brandFilter, statusFilter, modelFilter, sessionIdFilter])
+
 
   // Reset job selection when brand changes
   useEffect(() => {
@@ -567,10 +630,7 @@ export default function ResultsPage() {
     }
   }, [brandFilter])
 
-  // Clear task selection when filters change
-  useEffect(() => {
-    setSelectedFailedTasks(new Set())
-  }, [brandFilter, statusFilter, searchTerm])
+
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -579,6 +639,8 @@ export default function ResultsPage() {
       case "failed":
         return "bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/20"
       case "processing":
+        return "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+      case "retrying":
         return "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
       default:
         return "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20"
@@ -611,6 +673,8 @@ export default function ResultsPage() {
       case "JOB_RUNNING":
       case "processing":
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+      case "retrying":
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
       default:
         return <Clock className="h-4 w-4 text-yellow-500" />
     }
@@ -629,6 +693,8 @@ export default function ResultsPage() {
         return "bg-blue-100 text-blue-800"
       case "llm_generated":
         return "bg-purple-100 text-purple-800"
+      case "retrying":
+        return "bg-blue-100 text-blue-800"
       default:
         return "bg-yellow-100 text-yellow-800"
     }
@@ -703,12 +769,14 @@ export default function ResultsPage() {
     }
   }
 
+  console.log("Current loading states - isLoading:", isLoading, "tableLoading:", tableLoading, "results:", results)
+  
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p>Loading results...</p>
+          <p>Loading page...</p>
         </div>
       </div>
     )
@@ -725,10 +793,16 @@ export default function ResultsPage() {
             <p className="text-muted-foreground">View and manage AI processing tasks from the database</p>
             <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
               <span>{results.total_count} total tasks</span>
-              <span>{filteredData.length} filtered results</span>
+              <span>{results.tasks.length} current page results</span>              
               {totalPages > 1 && (
                 <span>
                   Page {currentPage} of {totalPages}
+                </span>
+              )}
+              {tableLoading && (
+                <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading...
                 </span>
               )}
             </div>
@@ -856,31 +930,89 @@ export default function ResultsPage() {
                     placeholder="Search by brand, product, query, or AI model..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-11 rounded-xl bg-white/60 dark:bg-white/10 border border-white/60 dark:border-white/10"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        fetchResults(1)
+                      }
+                    }}
+                    disabled={tableLoading}
+                    className={`pl-10 h-11 rounded-xl bg-white/60 dark:bg-white/10 border border-white/60 dark:border-white/10 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      searchTerm.trim() ? 'border-blue-500 dark:border-blue-400' : ''
+                    }`}
                   />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 </div>
+                <Button
+                  onClick={() => fetchResults(1)}
+                  disabled={tableLoading || !searchTerm.trim()}
+                  className="h-11 px-6"
+                >
+                  {tableLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Search className="h-4 w-4 mr-2" />
+                  )}
+                  Search
+                </Button>
+                {searchTerm.trim() && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchTerm("")
+                      fetchResults(1)
+                    }}
+                    disabled={tableLoading}
+                    className="h-11 px-4"
+                  >
+                    <XCircle className="h-4 w-4 mr-2" />
+                    Clear
+                  </Button>
+                )}
               </div>
 
               <div className="flex gap-4 items-center">
                 <Filter className="h-4 w-4 text-muted-foreground" />
+                <div className="flex gap-2 items-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchFilterOptions}
+                    disabled={filterOptionsLoading}
+                    className="h-8 px-2"
+                  >
+                    {filterOptionsLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                  </Button>
+                </div>
                 <div className="flex gap-4 flex-wrap">
                   <select
                     value={brandFilter}
                     onChange={(e) => setBrandFilter(e.target.value)}
-                    className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
+                    disabled={tableLoading}
+                    className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="all">All Brands</option>
-                    {uniqueBrands.map((brand) => (
-                      <option key={brand} value={brand}>
-                        {brand}
-                      </option>
-                    ))}
+                    <option value="all">All Brands ({uniqueBrands.length})</option>
+                    {filterOptionsLoading ? (
+                      <option disabled>Loading brands...</option>
+                    ) : uniqueBrands.length === 0 ? (
+                      <option disabled>No brands found</option>
+                    ) : (
+                      uniqueBrands.map((brand) => (
+                        <option key={brand} value={brand}>
+                          {brand}
+                        </option>
+                      ))
+                    )}
                   </select>
 
                   <select
                     value={sessionIdFilter}
                     onChange={(e) => setSessionIdFilter(e.target.value)}
-                    disabled={brandFilter === "all"}
+                    disabled={brandFilter === "all" || tableLoading}
                     className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="all">
@@ -907,27 +1039,41 @@ export default function ResultsPage() {
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
+                    disabled={tableLoading}
+                    className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="all">All Statuses</option>
-                    {uniqueStatuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
+                    <option value="all">All Statuses ({uniqueStatuses.length})</option>
+                    {filterOptionsLoading ? (
+                      <option disabled>Loading statuses...</option>
+                    ) : uniqueStatuses.length === 0 ? (
+                      <option disabled>No statuses found</option>
+                    ) : (
+                      uniqueStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))
+                    )}
                   </select>
 
                   <select
                     value={modelFilter}
                     onChange={(e) => setModelFilter(e.target.value)}
-                    className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm"
+                    disabled={tableLoading}
+                    className="px-3 py-2 border rounded-md bg-white/60 dark:bg-white/10 border-white/60 dark:border-white/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="all">All AI Models</option>
-                    {uniqueModels.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
+                    <option value="all">All AI Models ({uniqueModels.length})</option>
+                    {filterOptionsLoading ? (
+                      <option disabled>Loading models...</option>
+                    ) : uniqueModels.length === 0 ? (
+                      <option disabled>No models found</option>
+                    ) : (
+                      uniqueModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>
@@ -935,7 +1081,7 @@ export default function ResultsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white/60 dark:bg-white/5 backdrop-blur border border-white/60 dark:border-white/10">
+                <Card className="bg-white/60 dark:bg-white/5 backdrop-blur border border-white/60 dark:border-white/10">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -943,9 +1089,13 @@ export default function ResultsPage() {
                 Task Results
               </CardTitle>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={fetchResults}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Refresh
+                <Button variant="outline" onClick={() => fetchResults(currentPage)} disabled={tableLoading}>
+                  {tableLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  {tableLoading ? 'Loading...' : 'Refresh'}
                 </Button>
               </div>
             </div>
@@ -1021,7 +1171,15 @@ export default function ResultsPage() {
               </div>
             )}
 
-            <div className="rounded-md border border-white/60 dark:border-gray-700/60 overflow-hidden">
+            <div className="rounded-md border border-white/60 dark:border-gray-700/60 overflow-hidden relative">
+              {tableLoading && (
+                <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Loading results...</p>
+                  </div>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow className="bg-white/60 dark:bg-gray-800/60">
@@ -1049,7 +1207,7 @@ export default function ResultsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedData.map((row) => (
+                  {tableData.map((row) => (
                     <TableRow
                       key={row.id}
                       className={`
@@ -1148,16 +1306,20 @@ export default function ResultsPage() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <div className="text-sm text-muted-foreground">
-                  Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)} of {filteredData.length} results
+                  Showing {((currentPage - 1) * ROWS_PER_PAGE) + 1}-{Math.min(currentPage * ROWS_PER_PAGE, results.total_count)} of {results.total_count} results
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage(currentPage - 1)}
-                    disabled={currentPage === 1}
+                    onClick={() => fetchResults(currentPage - 1)}
+                    disabled={currentPage === 1 || tableLoading}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    {tableLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ChevronLeft className="h-4 w-4" />
+                    )}
                     Previous
                   </Button>
 
@@ -1179,7 +1341,8 @@ export default function ResultsPage() {
                           key={pageNum}
                           variant={currentPage === pageNum ? "default" : "outline"}
                           size="sm"
-                          onClick={() => setCurrentPage(pageNum)}
+                          onClick={() => fetchResults(pageNum)}
+                          disabled={tableLoading}
                           className="w-8 h-8 p-0"
                         >
                           {pageNum}
@@ -1191,11 +1354,15 @@ export default function ResultsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage(currentPage + 1)}
-                    disabled={currentPage === totalPages}
+                    onClick={() => fetchResults(currentPage + 1)}
+                    disabled={currentPage === totalPages || tableLoading}
                   >
                     Next
-                    <ChevronRight className="h-4 w-4" />
+                    {tableLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </div>
