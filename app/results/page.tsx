@@ -307,14 +307,17 @@ export default function ResultsPage() {
       // Handle model name variations to match supported models
       if (model.includes('ChatGPT') || model.includes('gpt')) {
         model = 'chatgpt'
-      } else if (model.includes('aio') || model.includes('GOOGLE_AI_OVERVIEW')) {
+      } else if (model.includes('aio') || model.includes('GOOGLE_AI_OVERVIEW') || model.includes('google_ai_overview')) {
         model = 'aio'
-      } else if (model.includes('aim') || model.includes('GOOGLE_AI_MODE')) {
+      } else if (model.includes('aim') || model.includes('GOOGLE_AI_MODE') || model.includes('google_ai_mode')) {
         model = 'aim'
       } else if (model.includes('perplexity')) {
         model = 'perplexity'
       } else {
-        model = 'perplexity'
+        console.log("Unknown model:", model)
+        // exit the function
+        throw new Error("Unknown model: " + model)
+        // model = 'perplexity'
       }
 
       const response = await fetch("/api/retry-tasks", {
@@ -373,14 +376,17 @@ export default function ResultsPage() {
         // Handle model name variations to match supported models
         if (model.includes('ChatGPT') || model.includes('gpt')) {
           model = 'chatgpt'
-        } else if (model.includes('aio') || model.includes('GOOGLE_AI_OVERVIEW')) {
+        } else if (model.includes('aio') || model.includes('GOOGLE_AI_OVERVIEW') || model.includes('google_ai_overview')) {
           model = 'aio'
-        } else if (model.includes('aim') || model.includes('GOOGLE_AI_MODE')) {
+        } else if (model.includes('aim') || model.includes('GOOGLE_AI_MODE') || model.includes('google_ai_mode')) {
           model = 'aim'
         } else if (model.includes('perplexity')) {
           model = 'perplexity'
         } else {
-          model = 'perplexity'
+          console.log("Unknown model:", model)
+          // exit the function
+          throw new Error("Unknown model: " + model)
+          // model = 'perplexity'
         }
         
         return {
@@ -551,35 +557,6 @@ export default function ResultsPage() {
     return tableData.filter((row) => row.status === "failed").length
   }
 
-  const getSelectedFailedTasksData = () => {
-    return tableData
-      .filter((row) => selectedFailedTasks.has(row.id) && row.status === "failed")
-      .map((row) => {
-        // Map AI model names to supported model values
-        let model = row.llmModel.toLowerCase().replace(/\s+/g, "")
-
-        // Handle model name variations to match supported models
-        if (model.includes("ChatGPT") || model.includes("gpt")) {
-          model = "chatgpt"
-        } else if (model.includes("aio") || model.includes("GOOGLE_AI_OVERVIEW")) {
-          model = "aio"
-        } else if (model.includes("aim") || model.includes("GOOGLE_AI_MODE")) {
-          model = "aim"
-        } else if (model.includes("perplexity")) {
-          model = "perplexity"
-        } else {
-          model = "perplexity"
-        }
-
-        return {
-          task_id: row.id,
-          model: model,
-          query_id: row.task.query_id || 0,
-          product_id: row.task.product_id || 0,
-        }
-      })
-  }
-
   const handleDownloadSelected = () => {
     if (selectedJobId) {
       downloadJobData(selectedJobId)
@@ -653,9 +630,9 @@ export default function ResultsPage() {
       return "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/20"
     } else if (modelLower.includes("perplexity")) {
       return "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/20"
-    } else if (modelLower.includes("aimode") || modelLower.includes("ai_mode")) {
+    } else if (modelLower.includes("aimode") || modelLower.includes("GOOGLE_AI_MODE") || modelLower.includes("google_ai_mode")) {
       return "bg-green-500/15 text-green-700 dark:text-green-300 border border-green-500/20"
-    } else if (modelLower.includes("aioverview") || modelLower.includes("aio")) {
+    } else if (modelLower.includes("aioverview") || modelLower.includes("GOOGLE_AI_OVERVIEW") || modelLower.includes("google_ai_overview")) {
       return "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
     }
     return "bg-gray-500/15 text-gray-700 dark:text-gray-300 border border-gray-500/20"
@@ -1143,7 +1120,7 @@ export default function ResultsPage() {
 
                 <div className="h-4 w-px bg-blue-300 dark:bg-blue-700" />
 
-                <div className="flex gap-2 items-center flex-wrap">
+                {/* <div className="flex gap-2 items-center flex-wrap">
                   <span className="text-sm text-blue-700 dark:text-blue-300 font-medium">Quick Retry:</span>
                   {modelFilter !== "all" && (
                     <Button
@@ -1167,7 +1144,7 @@ export default function ResultsPage() {
                       All Failed ({brandFilter})
                     </Button>
                   )}
-                </div>
+                </div> */}
               </div>
             )}
 
