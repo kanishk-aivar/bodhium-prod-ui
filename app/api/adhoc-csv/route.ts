@@ -23,11 +23,18 @@ interface LambdaResponse {
     total_tasks: number
     success_rate: number
   }
+  content_analysis?: any
   csv_details: {
     generated: boolean
     s3_location: string
     filename: string
     size_info: string
+    analysis_columns_added?: string[]
+  }
+  download?: {
+    presigned_url: string
+    expires_in: string
+    direct_download: boolean
   }
   generated_at: string
   processing_complete: boolean
@@ -75,7 +82,25 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'download' && parsedBody.csv_details?.generated) {
-      // Extract S3 key from the S3 location
+      // Check if presigned URL is available
+      if (parsedBody.download?.presigned_url && parsedBody.download?.direct_download) {
+        // Return the presigned URL for direct download
+        return NextResponse.json({
+          success: true,
+          download_type: 'presigned_url',
+          presigned_url: parsedBody.download.presigned_url,
+          expires_in: parsedBody.download.expires_in,
+          filename: parsedBody.csv_details.filename,
+          metadata: {
+            total_records: parsedBody.summary.total_records,
+            size_info: parsedBody.csv_details.size_info,
+            analysis_columns_added: parsedBody.csv_details.analysis_columns_added,
+            generated_at: parsedBody.generated_at
+          }
+        })
+      }
+
+      // Fallback to S3 direct access if no presigned URL
       const s3Location = parsedBody.csv_details.s3_location
       const s3Key = parsedBody.csv_details.filename
       
