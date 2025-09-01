@@ -16,38 +16,16 @@ interface AdHocJob {
   total_tasks: number
   completed_tasks: number
   // Enhanced fields from backend response
-  summary?: {
-    total_records: number
-    completed_tasks: number
-    failed_tasks: number
-    total_tasks: number
-    success_rate: number
-  }
-  content_analysis?: {
-    total_records: number
-    records_with_content: number
-    soft_failures: number
-    ai_overview_present: number
-    records_with_citations: number
-    records_with_citation_presence: number
-    average_citation_count: number
-    records_with_brand: number
-    records_with_brand_present: number
-  }
   csv_details?: {
     generated: boolean
     s3_location?: string
     filename?: string
-    size_info?: string
-    analysis_columns_added?: string[]
   }
   download?: {
     presigned_url?: string
     expires_in?: string
     direct_download: boolean
   }
-  generated_at?: string
-  processing_complete?: boolean
 }
 
 interface AdHocJobsResponse {
@@ -61,9 +39,7 @@ interface CachedDownload {
   filename: string
   expiresAt: number
   metadata: {
-    total_records: number
     size_info: string
-    analysis_columns_added?: string[]
     generated_at: string
   }
 }
@@ -75,9 +51,7 @@ interface DownloadResponse {
   expires_in?: string
   filename?: string
   metadata?: {
-    total_records: number
     size_info: string
-    analysis_columns_added?: string[]
     generated_at: string
   }
 }
@@ -247,7 +221,7 @@ export default function AdHocJobsPage() {
 
       toast({
         title: "CSV Ready",
-        description: `CSV generated with ${statusData.data.summary.total_records} records. Starting download...`,
+        description: "CSV generated successfully. Starting download...",
       })
 
       // Now download the CSV
@@ -281,11 +255,10 @@ export default function AdHocJobsPage() {
             presignedUrl: downloadData.presigned_url,
             filename: downloadData.filename || `adhoc_job_${jobId}_${new Date().toISOString().split('T')[0]}.csv`,
             expiresAt: parseExpiresIn(downloadData.expires_in || '1 hour'),
-            metadata: downloadData.metadata || {
-              total_records: 0,
-              size_info: 'Unknown',
-              generated_at: new Date().toISOString()
-            }
+                      metadata: downloadData.metadata || {
+            size_info: 'Unknown',
+            generated_at: new Date().toISOString()
+          }
           }
 
           // Save to cache
@@ -296,7 +269,7 @@ export default function AdHocJobsPage() {
 
           toast({
             title: "Success",
-            description: `CSV downloaded successfully! (${cachedDownload.metadata.total_records} records)`,
+            description: "CSV downloaded successfully!",
           })
         } else {
           throw new Error("Invalid JSON response format")
@@ -515,19 +488,7 @@ export default function AdHocJobsPage() {
                       </div>
                     )}
 
-                    {/* Generation Timestamp */}
-                    {job.generated_at && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground p-2 bg-muted/30 rounded">
-                        <Clock className="h-3 w-3" />
-                        <span>Generated: {new Date(job.generated_at).toLocaleString()}</span>
-                        {job.processing_complete && (
-                          <>
-                            <span aria-hidden="true">•</span>
-                            <span className="text-green-600 font-medium">✓ Complete</span>
-                          </>
-                        )}
-                      </div>
-                    )}
+
   
                     {/* Cache Status */}
                     {cachedDownload && (
@@ -540,10 +501,7 @@ export default function AdHocJobsPage() {
                               Available
                             </span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-amber-700 font-medium">Records:</span>
-                            <span className="text-amber-600">{cachedDownload.metadata.total_records}</span>
-                          </div>
+
                           <div className="flex items-center gap-3 text-xs text-amber-600">
                             <div className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
@@ -640,7 +598,7 @@ export default function AdHocJobsPage() {
                           {jobId}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {download.metadata.total_records} records • {download.metadata.size_info}
+                          {download.metadata.size_info}
                         </p>
                       </div>
   

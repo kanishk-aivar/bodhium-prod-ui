@@ -16,28 +16,16 @@ const S3_ADHOC_DOWNLOAD_BUCKET = process.env.S3_ADHOC_DOWNLOAD_BUCKET
 interface LambdaResponse {
   status: string
   job_id: string
-  summary: {
-    total_records: number
-    completed_tasks: number
-    failed_tasks: number
-    total_tasks: number
-    success_rate: number
-  }
-  content_analysis?: any
   csv_details: {
     generated: boolean
     s3_location: string
     filename: string
-    size_info: string
-    analysis_columns_added?: string[]
   }
   download?: {
     presigned_url: string
     expires_in: string
     direct_download: boolean
   }
-  generated_at: string
-  processing_complete: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -92,10 +80,8 @@ export async function POST(request: NextRequest) {
           expires_in: parsedBody.download.expires_in,
           filename: parsedBody.csv_details.filename,
           metadata: {
-            total_records: parsedBody.summary.total_records,
-            size_info: parsedBody.csv_details.size_info,
-            analysis_columns_added: parsedBody.csv_details.analysis_columns_added,
-            generated_at: parsedBody.generated_at
+            size_info: 'Unknown',
+            generated_at: new Date().toISOString()
           }
         })
       }
