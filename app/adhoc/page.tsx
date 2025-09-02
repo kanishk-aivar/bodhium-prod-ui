@@ -33,15 +33,12 @@ interface AdHocJobsResponse {
   total_count: number
 }
 
-interface CachedDownload {
-  jobId: string
-  presignedUrl: string
+interface S3CsvFile {
+  job_id: string
   filename: string
-  expiresAt: number
-  metadata: {
-    size_info: string
-    generated_at: string
-  }
+  s3_key: string
+  last_modified: string
+  size: number
 }
 
 interface DownloadResponse {
@@ -61,97 +58,32 @@ export default function AdHocJobsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [downloadingJobs, setDownloadingJobs] = useState<Set<string>>(new Set())
   const [generatingJobs, setGeneratingJobs] = useState<Set<string>>(new Set())
-  const [cachedDownloads, setCachedDownloads] = useState<Map<string, CachedDownload>>(new Map())
+  const [s3CsvFiles, setS3CsvFiles] = useState<Map<string, S3CsvFile>>(new Map())
 
   const { toast } = useToast()
 
-  // LocalStorage utilities for managing cached downloads
-  const CACHE_KEY = 'adhoc_cached_downloads'
-  const SAFETY_MARGIN_MS = 60 * 1000 // 60 seconds early expiry for safety
-
-  const saveCachedDownload = (download: CachedDownload) => {
+  const fetchS3CsvFiles = async () => {
     try {
-      const existing = getCachedDownloads()
-      existing.set(download.jobId, download)
-      localStorage.setItem(CACHE_KEY, JSON.stringify(Array.from(existing.entries())))
-      setCachedDownloads(new Map(existing))
-    } catch (error) {
-      console.error('Failed to save cached download:', error)
-    }
-  }
-
-  const getCachedDownloads = (): Map<string, CachedDownload> => {
-    try {
-      const stored = localStorage.getItem(CACHE_KEY)
-      if (!stored) return new Map()
+      const response = await fetch("/api/adhoc-csv")
+      const data = await response.json()
       
-      const entries = JSON.parse(stored) as [string, CachedDownload][]
-      const now = Date.now()
-      
-      // Filter out expired entries
-      const validEntries = entries.filter(([_, download]) => 
-        download.expiresAt > now + SAFETY_MARGIN_MS
-      )
-      
-      // Update localStorage if we removed expired entries
-      if (validEntries.length !== entries.length) {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(validEntries))
+      if (response.ok && data.success) {
+        const csvFilesMap = new Map<string, S3CsvFile>()
+        data.csv_files.forEach((file: S3CsvFile) => {
+          csvFilesMap.set(file.job_id, file)
+        })
+        setS3CsvFiles(csvFilesMap)
+      } else {
+        console.error('Failed to fetch S3 CSV files:', data.error)
       }
-      
-      return new Map(validEntries)
     } catch (error) {
-      console.error('Failed to get cached downloads:', error)
-      return new Map()
+      console.error('Error fetching S3 CSV files:', error)
     }
-  }
-
-  const getCachedDownload = (jobId: string): CachedDownload | null => {
-    const cached = getCachedDownloads()
-    const download = cached.get(jobId)
-    
-    if (!download) return null
-    
-    // Check if expired (with safety margin)
-    if (download.expiresAt <= Date.now() + SAFETY_MARGIN_MS) {
-      cached.delete(jobId)
-      localStorage.setItem(CACHE_KEY, JSON.stringify(Array.from(cached.entries())))
-      setCachedDownloads(new Map(cached))
-      return null
-    }
-    
-    return download
-  }
-
-  const clearCachedDownload = (jobId: string) => {
-    const existing = getCachedDownloads()
-    existing.delete(jobId)
-    localStorage.setItem(CACHE_KEY, JSON.stringify(Array.from(existing.entries())))
-    setCachedDownloads(new Map(existing))
-  }
-
-  const parseExpiresIn = (expiresIn: string): number => {
-    // Parse "1 hour" format and return timestamp
-    const now = Date.now()
-    if (expiresIn.includes('hour')) {
-      return now + (60 * 60 * 1000) // 1 hour from now
-    }
-    // Default to 1 hour if format is unclear
-    return now + (60 * 60 * 1000)
   }
 
   useEffect(() => {
     fetchAdHocJobs()
-    // Load cached downloads on component mount
-    setCachedDownloads(getCachedDownloads())
-  }, [])
-
-  // Periodic cleanup of expired cached downloads
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCachedDownloads(getCachedDownloads())
-    }, 30000) // Check every 30 seconds
-
-    return () => clearInterval(interval)
+    fetchS3CsvFiles()
   }, [])
 
   const fetchAdHocJobs = async () => {
@@ -176,33 +108,59 @@ export default function AdHocJobsPage() {
     }
   }
 
-  const downloadFromPresignedUrl = (cachedDownload: CachedDownload) => {
-    const link = document.createElement("a")
-    link.href = cachedDownload.presignedUrl
-    link.download = cachedDownload.filename
-    link.target = "_blank"
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const refreshData = async () => {
+    await Promise.all([fetchAdHocJobs(), fetchS3CsvFiles()])
+  }
+
+  const downloadFromS3 = async (s3File: S3CsvFile) => {
+    setDownloadingJobs(prev => new Set(prev).add(s3File.job_id))
+    
+    try {
+      const response = await fetch("/api/adhoc-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: s3File.job_id, action: "download" }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to get download URL")
+      }
+
+      const downloadData: DownloadResponse = await response.json()
+
+      // Handle presigned URL response - redirect immediately
+      if (downloadData.download_type === 'presigned_url' && downloadData.presigned_url) {
+        // Redirect to S3 presigned URL immediately
+        window.open(downloadData.presigned_url, '_blank')
+        
+        toast({
+          title: "Success",
+          description: "Redirecting to download...",
+        })
+      } else {
+        throw new Error("Invalid response format")
+      }
+    } catch (error) {
+      console.error("CSV download error:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to get download URL",
+        variant: "destructive",
+      })
+    } finally {
+      setDownloadingJobs(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(s3File.job_id)
+        return newSet
+      })
+    }
   }
 
   const generateAndDownloadCSV = async (jobId: string) => {
-    // Check if we have a cached download first
-    const cached = getCachedDownload(jobId)
-    if (cached) {
-      // If there's a cached download, clear it and regenerate
-      clearCachedDownload(jobId)
-      
-      toast({
-        title: "Regenerating CSV",
-        description: "Clearing cache and generating fresh CSV...",
-      })
-    }
-
     setGeneratingJobs(prev => new Set(prev).add(jobId))
     
     try {
-      // First, generate/check CSV status
+      // Submit CSV generation as an event to Lambda
       const statusResponse = await fetch("/api/adhoc-csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -210,107 +168,47 @@ export default function AdHocJobsPage() {
       })
 
       if (!statusResponse.ok) {
-        throw new Error("Failed to generate CSV")
+        throw new Error("Failed to submit CSV generation")
       }
 
       const statusData = await statusResponse.json()
       
-      if (!statusData.success || !statusData.data.csv_details?.generated) {
-        throw new Error("CSV generation failed or not ready")
+      if (!statusData.success) {
+        throw new Error("CSV generation submission failed")
       }
 
+      // Show success notification for event submission
       toast({
-        title: "CSV Ready",
-        description: "CSV generated successfully. Starting download...",
+        title: "Success",
+        description: "CSV Report Generation Submitted Successfully",
       })
 
-      // Now download the CSV
-      setGeneratingJobs(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(jobId)
-        return newSet
-      })
-      setDownloadingJobs(prev => new Set(prev).add(jobId))
+      // Refresh S3 files to check for any existing CSV
+      await fetchS3CsvFiles()
 
-      const downloadResponse = await fetch("/api/adhoc-csv", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobId, action: "download" }),
-      })
-
-      if (!downloadResponse.ok) {
-        throw new Error("Failed to download CSV")
-      }
-
-      // Check if response is JSON (presigned URL) or blob (direct download)
-      const contentType = downloadResponse.headers.get('content-type')
-      
-      if (contentType?.includes('application/json')) {
-        const downloadData: DownloadResponse = await downloadResponse.json()
-
-        // Handle presigned URL response
-        if (downloadData.download_type === 'presigned_url' && downloadData.presigned_url) {
-          const cachedDownload: CachedDownload = {
-            jobId,
-            presignedUrl: downloadData.presigned_url,
-            filename: downloadData.filename || `adhoc_job_${jobId}_${new Date().toISOString().split('T')[0]}.csv`,
-            expiresAt: parseExpiresIn(downloadData.expires_in || '1 hour'),
-                      metadata: downloadData.metadata || {
-            size_info: 'Unknown',
-            generated_at: new Date().toISOString()
-          }
-          }
-
-          // Save to cache
-          saveCachedDownload(cachedDownload)
-
-          // Download immediately
-          downloadFromPresignedUrl(cachedDownload)
-
-          toast({
-            title: "Success",
-            description: "CSV downloaded successfully!",
-          })
-        } else {
-          throw new Error("Invalid JSON response format")
-        }
-      } else {
-        // Handle blob response (fallback)
-        const blob = await downloadResponse.blob()
-        const url = window.URL.createObjectURL(blob)
-        const link = document.createElement("a")
-        link.href = url
-        
-        // Get filename from response headers or create default
-        const contentDisposition = downloadResponse.headers.get('Content-Disposition')
-        const filenameMatch = contentDisposition?.match(/filename="(.+)"/)
-        const filename = filenameMatch ? filenameMatch[1] : `adhoc_job_${jobId}_${new Date().toISOString().split('T')[0]}.csv`
-        
-        link.download = filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(url)
-
+      // Check if CSV is already available for immediate download
+      const s3File = s3CsvFiles.get(jobId)
+      if (s3File) {
         toast({
-          title: "Success",
-          description: "CSV downloaded successfully!",
+          title: "CSV Available",
+          description: "CSV is ready for download!",
+        })
+        await downloadFromS3(s3File)
+      } else {
+        toast({
+          title: "Processing",
+          description: "CSV generation is in progress. Check back later or refresh to see when it's ready.",
         })
       }
     } catch (error) {
-      console.error("CSV download error:", error)
+      console.error("CSV generation error:", error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to download CSV",
+        description: error instanceof Error ? error.message : "Failed to submit CSV generation",
         variant: "destructive",
       })
     } finally {
       setGeneratingJobs(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(jobId)
-        return newSet
-      })
-      setDownloadingJobs(prev => {
         const newSet = new Set(prev)
         newSet.delete(jobId)
         return newSet
@@ -325,20 +223,7 @@ export default function AdHocJobsPage() {
     return Math.round((completed / total) * 100)
   }
 
-  const formatTimeRemaining = (expiresAt: number): string => {
-    const now = Date.now()
-    const remaining = expiresAt - now
-    
-    if (remaining <= 0) return 'Expired'
-    
-    const minutes = Math.floor(remaining / (1000 * 60))
-    const hours = Math.floor(minutes / 60)
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`
-    }
-    return `${minutes}m`
-  }
+
 
   return isLoading ? (
     <div className="min-h-screen flex items-center justify-center">
@@ -366,9 +251,9 @@ export default function AdHocJobsPage() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={fetchAdHocJobs}
+            onClick={refreshData}
             disabled={isLoading}
-            aria-label="Refresh jobs list"
+            aria-label="Refresh jobs list and CSV files"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
@@ -390,12 +275,12 @@ export default function AdHocJobsPage() {
           </CardContent>
         </Card>
       ) : (
-        <section aria-label="Jobs" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <section aria-label="Jobs" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mb-8">
           {jobs.map((job) => {
             const completionRate = getCompletionRate(job.completed_tasks, job.total_tasks)
             const isProcessing = generatingJobs.has(job.job_id)
             const isDownloading = downloadingJobs.has(job.job_id)
-            const cachedDownload = cachedDownloads.get(job.job_id)
+            const s3File = s3CsvFiles.get(job.job_id)
   
             return (
               <Card key={job.job_id} className="border">
@@ -490,28 +375,28 @@ export default function AdHocJobsPage() {
 
 
   
-                    {/* Cache Status */}
-                    {cachedDownload && (
-                      <div className="space-y-3 p-3 bg-amber-50/50 rounded-lg border border-amber-200/50">
-                        <h4 className="text-sm font-medium text-amber-900">Cached Download</h4>
+                    {/* S3 File Status */}
+                    {s3File && (
+                      <div className="space-y-3 p-3 bg-blue-50/50 rounded-lg border border-blue-200/50">
+                        <h4 className="text-sm font-medium text-blue-900">Available CSV</h4>
                         <div className="space-y-2 text-xs">
                           <div className="flex items-center justify-between">
-                            <span className="text-amber-700 font-medium">Status:</span>
-                            <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs">
-                              Available
+                            <span className="text-blue-700 font-medium">Status:</span>
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                              Ready
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-3 text-xs text-amber-600">
+                          <div className="flex items-center gap-3 text-xs text-blue-600">
                             <div className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               <span>
-                                Generated {new Date(cachedDownload.metadata.generated_at).toLocaleString()}
+                                Generated {new Date(s3File.last_modified).toLocaleString()}
                               </span>
                             </div>
                             <span aria-hidden="true">•</span>
                             <span>
-                              Expires in {formatTimeRemaining(cachedDownload.expiresAt)}
+                              Size: {(s3File.size / 1024).toFixed(1)} KB
                             </span>
                           </div>
                         </div>
@@ -522,10 +407,10 @@ export default function AdHocJobsPage() {
                     <div className="flex gap-2">
                       
   
-                      {cachedDownload && (
+                      {s3File && (
                         <Button
                           size="sm"
-                          onClick={() => downloadFromPresignedUrl(cachedDownload)}
+                          onClick={() => downloadFromS3(s3File)}
                           disabled={isDownloading}
                           aria-busy={isDownloading}
                           aria-label={`Download CSV for ${job.job_id}`}
@@ -547,14 +432,14 @@ export default function AdHocJobsPage() {
                         onClick={() => generateAndDownloadCSV(job.job_id)}
                         disabled={isProcessing || isDownloading}
                         aria-busy={isProcessing}
-                        aria-label={cachedDownload ? `Regenerate CSV for ${job.job_id}` : `Generate CSV for ${job.job_id}`}
+                        aria-label={s3File ? `Regenerate CSV for ${job.job_id}` : `Generate CSV for ${job.job_id}`}
                       >
                         {isProcessing ? (
                           <>
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Generating...
+                            Submitting...
                           </>
-                        ) : cachedDownload ? (
+                        ) : s3File ? (
                           <>
                             <RefreshCw className="h-4 w-4 mr-2" />
                             Regenerate CSV
@@ -575,22 +460,22 @@ export default function AdHocJobsPage() {
         </section>
       )}
   
-      {/* Local History */}
-      {cachedDownloads.size > 0 && (
-        <section aria-label="Local history">
+      {/* Available CSV Files */}
+      {s3CsvFiles.size > 0 && (
+        <section aria-label="Available CSV files">
           <Card className="border">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Database className="h-5 w-5" />
-                Local History ({cachedDownloads.size} cached reports)
+                Available CSV Files ({s3CsvFiles.size} files)
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Recently generated reports available for instant download
+                CSV files available for download from S3
               </p>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Array.from(cachedDownloads.entries()).map(([jobId, download]) => (
+                {Array.from(s3CsvFiles.entries()).map(([jobId, s3File]) => (
                   <div key={jobId} className="p-4 border rounded-lg bg-muted/30">
                     <div className="space-y-3">
                       <div>
@@ -598,7 +483,7 @@ export default function AdHocJobsPage() {
                           {jobId}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {download.metadata.size_info}
+                          {s3File.filename} ({(s3File.size / 1024).toFixed(1)} KB)
                         </p>
                       </div>
   
@@ -607,16 +492,14 @@ export default function AdHocJobsPage() {
                           <div className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
                             <span>
-                              Generated {new Date(download.metadata.generated_at).toLocaleString()}
+                              Generated {new Date(s3File.last_modified).toLocaleString()}
                             </span>
                           </div>
-                          <span aria-hidden="true">•</span>
-                          <span>Expires in {formatTimeRemaining(download.expiresAt)}</span>
                         </div>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => downloadFromPresignedUrl(download)}
+                          onClick={() => downloadFromS3(s3File)}
                           aria-label={`Download CSV for ${jobId}`}
                         >
                           <Download className="h-4 w-4 mr-1" />
