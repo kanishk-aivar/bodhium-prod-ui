@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
+import { useState } from "react"
 import ThemeToggle from "./ThemeToggle"
 
 const items = [
@@ -51,6 +52,31 @@ const items = [
     description: "Download CSV Results"
   },
 ]
+
+// Component to handle profile image with fallback
+function ProfileImage({ src, alt, className }: { src?: string; alt: string; className: string }) {
+  const [imageError, setImageError] = useState(false)
+  const [imageLoaded, setImageLoaded] = useState(false)
+
+  // If no src or image failed to load, show fallback
+  if (!src || imageError) {
+    return (
+      <div className={`flex items-center justify-center rounded-full bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--accent))] text-primary-foreground ${className}`}>
+        <User className="h-4 w-4" />
+      </div>
+    )
+  }
+
+  return (
+    <img 
+      src={src} 
+      alt={alt}
+      className={`rounded-full object-cover border border-border ${className} ${!imageLoaded ? 'opacity-0' : 'opacity-100'} transition-opacity duration-200`}
+      onError={() => setImageError(true)}
+      onLoad={() => setImageLoaded(true)}
+    />
+  )
+}
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -106,9 +132,11 @@ export function AppSidebar() {
         {session?.user && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--accent))] text-primary-foreground">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfileImage 
+                src={session.user.image} 
+                alt={session.user.name || session.user.email || "User"} 
+                className="h-8 w-8"
+              />
               <div className="flex flex-col overflow-hidden">
                 <span className="font-medium truncate">{session.user.name || session.user.email}</span>
                 <span className="text-xs text-muted-foreground truncate">{session.user.email}</span>
